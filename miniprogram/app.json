@@ -1,14 +1,21 @@
 {
-  "pages": [
-    "pages/index/index",
-    "pages/example/index"
-  ],
+  "pages": ["pages/index/index", "pages/export/export", "pages/settings/settings"],
   "window": {
-    "backgroundColor": "#F6F6F6",
-    "backgroundTextStyle": "light",
-    "navigationBarBackgroundColor": "#F6F6F6",
-    "navigationBarTitleText": "云开发 QuickStart",
+    "backgroundColor": "#F4F7FB",
+    "navigationBarBackgroundColor": "#F4F7FB",
+    "navigationBarTitleText": "智能成绩录入",
     "navigationBarTextStyle": "black"
+  },
+  "tabBar": {
+    "color": "#8492A6",
+    "selectedColor": "#3979D8",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/index/index", "text": "录入", "iconPath": "images/icons/home.png", "selectedIconPath": "images/icons/home-active.png" },
+      { "pagePath": "pages/export/export", "text": "导出", "iconPath": "images/icons/goods.png", "selectedIconPath": "images/icons/goods-active.png" },
+      { "pagePath": "pages/settings/settings", "text": "设置", "iconPath": "images/icons/usercenter.png", "selectedIconPath": "images/icons/usercenter-active.png" }
+    ]
   },
   "sitemapLocation": "sitemap.json",
   "style": "v2",

@@ -1,0 +1,14 @@
+<view class="page">
+  <view class="settings-content">
+    <view class="eyebrow">班级配置</view>
+    <view class="heading">设置班级人数</view>
+    <view class="intro">保存后，录入页会自动生成对应数量的学号与成绩输入框。</view>
+    <view class="card setting-card">
+      <view class="field-label">班级人数</view>
+      <view class="size-line"><input class="size-input" type="number" value="{{classSize}}" bindinput="onSizeInput" maxlength="3" /><text>人</text></view>
+      <view class="hint">支持 1–200 人，学号从 01 开始顺序生成</view>
+    </view>
+    <view class="tip-card"><view class="tip-icon">i</view><view>设置会同步到云端，再次打开小程序时自动读取。修改人数不会删除已保存的历史成绩。</view></view>
+  </view>
+  <view class="bottom-area"><button class="primary-button" bindtap="save" loading="{{saving}}" disabled="{{saving}}">保存设置</button></view>
+</view>

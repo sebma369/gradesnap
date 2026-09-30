@@ -1,0 +1,8 @@
+{
+  "name": "grade-service",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "engines": { "node": ">=16" },
+  "dependencies": { "wx-server-sdk": "~2.4.0" }
+}

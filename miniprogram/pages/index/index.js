@@ -1,185 +1,103 @@
-// index.js
+const { DEFAULT_CLASS_SIZE, today, rowsForSize, errorMessage, callGrade } = require('../../utils/grade');
+
 Page({
   data: {
-    showTip: false,
-    powerList: [
-      {
-        title: "云托管",
-        tip: "不限语言的全托管容器服务",
-        showItem: false,
-        item: [
-          {
-            type: "cloudbaserun",
-            title: "云托管调用",
-          },
-        ],
-      },
-      {
-        title: "云函数",
-        tip: "安全、免鉴权运行业务代码",
-        showItem: false,
-        item: [
-          {
-            type: "getOpenId",
-            title: "获取OpenId",
-          },
-          {
-            type: "getMiniProgramCode",
-            title: "生成小程序码",
-          },
-        ],
-      },
-      {
-        title: "数据库",
-        tip: "安全稳定的文档型数据库",
-        showItem: false,
-        item: [
-          {
-            type: "createCollection",
-            title: "创建集合",
-          },
-          {
-            type: "selectRecord",
-            title: "增删改查记录",
-          },
-          // {
-          //   title: '聚合操作',
-          //   page: 'sumRecord',
-          // },
-        ],
-      },
-      {
-        title: "云存储",
-        tip: "自带CDN加速文件存储",
-        showItem: false,
-        item: [
-          {
-            type: "uploadFile",
-            title: "上传文件",
-          },
-        ],
-      },
-      {
-        title: "AI 接入能力",
-        tip: "云开发 AI 接入能力",
-        showItem: false,
-        item: [
-          {
-            type: "model-guide",
-            title: "大模型对话指引",
-          },
-        ],
-      },
-      {
-        title: "AI 智能开发小程序",
-        tip: "连接 AI 开发工具与 MCP 开发小程序",
-        type: "ai-assistant",
-        skipEnvCheck: true,
-        showItem: false,
-        item: [],
-      },
-    ],
-    haveCreateCollection: false,
-    title: "",
-    content: "",
+    date: today(), subject: '', classSize: DEFAULT_CLASS_SIZE,
+    scores: rowsForSize(DEFAULT_CLASS_SIZE), imageFileID: '', imagePath: '',
+    busy: false, busyText: '', recognized: false
   },
-  onClickPowerInfo(e) {
-    const app = getApp();
-    const index = e.currentTarget.dataset.index;
-    const powerList = this.data.powerList;
-    const selectedItem = powerList[index];
-    
-    // 检查是否跳过环境配置检测
-    if (!selectedItem.skipEnvCheck && !app.globalData.env) {
-      wx.showModal({
-        title: "提示",
-        content: "请在 `miniprogram/app.js` 中正确配置 `env` 参数",
-      });
-      return;
-    }
-    if (selectedItem.link) {
-      wx.navigateTo({
-        url: `../web/index?url=${selectedItem.link}&title=${selectedItem.title}`,
-      });
-    } else if (selectedItem.type) {
-      wx.navigateTo({
-        url: `/pages/example/index?envId=${this.data.selectedEnv?.envId}&type=${selectedItem.type}`,
-      });
-    } else if (selectedItem.page) {
-      wx.navigateTo({
-        url: `/pages/${selectedItem.page}/index`,
-      });
-    } else if (
-      selectedItem.title === "数据库" &&
-      !this.data.haveCreateCollection
-    ) {
-      this.onClickDatabase(powerList, selectedItem);
-    } else {
-      selectedItem.showItem = !selectedItem.showItem;
-      this.setData({
-        powerList,
-      });
+
+  onShow() {
+    const cached = Number(wx.getStorageSync('classSize')) || DEFAULT_CLASS_SIZE;
+    this.applyClassSize(cached);
+    this.loadSettings();
+  },
+
+  async loadSettings() {
+    try {
+      const settings = await callGrade('getSettings');
+      const size = settings.classSize || DEFAULT_CLASS_SIZE;
+      wx.setStorageSync('classSize', size);
+      this.applyClassSize(size);
+    } catch (error) {
+      wx.showToast({ title: '云端设置读取失败，暂用本地缓存', icon: 'none' });
     }
   },
 
-  jumpPage(e) {
-    const { type, page } = e.currentTarget.dataset;
-    console.log("jump page", type, page);
-    if (type) {
-      wx.navigateTo({
-        url: `/pages/example/index?envId=${this.data.selectedEnv?.envId}&type=${type}`,
-      });
-    } else {
-      wx.navigateTo({
-        url: `/pages/${page}/index?envId=${this.data.selectedEnv?.envId}`,
-      });
-    }
+  applyClassSize(size) {
+    if (size < 1 || size > 200 || size === this.data.classSize) return;
+    this.setData({ classSize: size, scores: rowsForSize(size, this.data.scores) });
   },
 
-  onClickDatabase(powerList, selectedItem) {
-    wx.showLoading({
-      title: "",
+  chooseImage() {
+    if (this.data.busy) return;
+    wx.showActionSheet({
+      itemList: ['拍照', '从相册选择'],
+      success: result => this.pickImage(result.tapIndex === 0 ? 'camera' : 'album')
     });
-    wx.cloud
-      .callFunction({
-        name: "quickstartFunctions",
-        data: {
-          type: "createCollection",
-        },
-      })
-      .then((resp) => {
-        if (resp.result.success) {
-          this.setData({
-            haveCreateCollection: true,
-          });
-        }
-        selectedItem.showItem = !selectedItem.showItem;
-        this.setData({
-          powerList,
-        });
-        wx.hideLoading();
-      })
-      .catch((e) => {
-        wx.hideLoading();
-        const { errCode, errMsg } = e;
-        if (errMsg.includes("Environment not found")) {
-          this.setData({
-            showTip: true,
-            title: "云开发环境未找到",
-            content:
-              "如果已经开通云开发，请检查环境ID与 `miniprogram/app.js` 中的 `env` 参数是否一致。",
-          });
-          return;
-        }
-        if (errMsg.includes("FunctionName parameter could not be found")) {
-          this.setData({
-            showTip: true,
-            title: "请上传云函数",
-            content:
-              "在'cloudfunctions/quickstartFunctions'目录右键，选择【上传并部署-云端安装依赖】，等待云函数上传完成后重试。",
-          });
-          return;
-        }
-      });
   },
+
+  async pickImage(sourceType) {
+    try {
+      const media = await wx.chooseMedia({ count: 1, mediaType: ['image'], sourceType: [sourceType], sizeType: ['compressed'] });
+      const path = media.tempFiles[0].tempFilePath;
+      const extension = (path.match(/\.(jpe?g|png|webp)$/i) || [,'jpg'])[1].toLowerCase();
+      this.setData({ busy: true, busyText: '正在上传成绩表…', recognized: false, imageFileID: '', imagePath: path });
+      const upload = await wx.cloud.uploadFile({ cloudPath: `score-sheets/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`, filePath: path });
+      this.setData({ imageFileID: upload.fileID, imagePath: path, busyText: '正在识别成绩表…' });
+      const result = await callGrade('recognize', { imageFileID: upload.fileID });
+      const recognized = (result.scores || []).map(row => ({ studentNo: String(row.studentNo).padStart(2, '0'), score: row.score }));
+      this.setData({
+        date: result.date || this.data.date,
+        subject: result.subject || this.data.subject,
+        scores: rowsForSize(this.data.classSize, recognized), recognized: true
+      });
+      if (recognized.some(row => row.score !== null && row.score !== '')) {
+        wx.showToast({ title: '识别完成，请核对', icon: 'success' });
+      } else {
+        wx.showModal({ title: '未识别到成绩', content: '请查看原图并手动填写成绩后保存。', showCancel: false });
+      }
+    } catch (error) {
+      if (!String(error.errMsg || '').includes('cancel')) {
+        const hint = this.data.imageFileID ? '图片已保留，您仍可手动填写。' : '图片尚未保存到云端，手动录入不会关联图片；也可重新选择图片。';
+        wx.showModal({ title: '识别未完成', content: `${errorMessage(error)}。${hint}`, showCancel: false });
+      }
+    } finally {
+      this.setData({ busy: false, busyText: '' });
+    }
+  },
+
+  onDateChange(event) { this.setData({ date: event.detail.value }); },
+  onSubjectInput(event) { this.setData({ subject: event.detail.value }); },
+  onScoreInput(event) {
+    const index = Number(event.currentTarget.dataset.index);
+    this.setData({ [`scores[${index}].score`]: event.detail.value });
+  },
+  previewImage() {
+    if (this.data.imagePath) wx.previewImage({ urls: [this.data.imagePath] });
+  },
+
+  async save() {
+    if (this.data.busy) return;
+    const subject = this.data.subject.trim();
+    if (!subject) return wx.showToast({ title: '请填写科目', icon: 'none' });
+    const invalid = this.data.scores.find(row => row.score !== '' && !/^(?:\d+)(?:\.\d+)?$/.test(String(row.score)));
+    if (invalid) return wx.showToast({ title: `请检查学号 ${invalid.studentNo} 的成绩`, icon: 'none' });
+    const filled = this.data.scores.filter(row => row.score !== '').length;
+    if (!filled) return wx.showToast({ title: '请至少填写一位学生的成绩', icon: 'none' });
+    this.setData({ busy: true, busyText: '正在保存成绩…' });
+    try {
+      await callGrade('saveRecord', {
+        date: this.data.date, subject,
+        scores: this.data.scores.map(row => ({ studentNo: row.studentNo, score: row.score === '' ? null : Number(row.score) })),
+        imageFileID: this.data.imageFileID
+      });
+      this.setData({ subject: '', scores: rowsForSize(this.data.classSize), imageFileID: '', imagePath: '', recognized: false });
+      wx.showModal({ title: '保存成功', content: '本次成绩已保存到云端，可在“导出”页查询。', showCancel: false });
+    } catch (error) {
+      wx.showModal({ title: '保存失败', content: errorMessage(error), showCancel: false });
+    } finally {
+      this.setData({ busy: false, busyText: '' });
+    }
+  }
 });

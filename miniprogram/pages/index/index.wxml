@@ -1,29 +1,43 @@
-<!--index.wxml-->
-<view class="container">
-  <view class="title">快速了解云开发</view>
-  <view class="top_tip">免鉴权接口调用 免部署后台 高并发</view>
-  <view class="power" wx:key="title" wx:for="{{powerList}}" wx:for-item="power">
-    <view class="power_info" data-index="{{index}}" data-type="{{ power.type }}" bindtap="onClickPowerInfo">
-      <view class="power_info_text">
-        <view class="power_info_text_title">
-          {{power.title}}
-          <view class="power_info_text_tag" wx:if="{{power.tag}}">{{power.tag}}</view>
-        </view>
-        <view class="power_info_text_tip">{{power.tip}}</view>
-      </view>
-      <image wx:if="{{!power.showItem && power.item.length}}" class="power_info_more" src="../../images/arrow.svg"></image>
-      <image wx:if="{{power.showItem && power.item.length}}" class="power_info_less" src="../../images/arrow.svg"></image>
-      <image wx:if="{{!power.item.length}}" class="power_item_icon" src="../../images/arrow.svg"></image>
-    </view>
-    <view wx:if="{{power.showItem}}">
-      <view wx:key="title" wx:for="{{power.item}}">
-        <view class="line"></view>
-        <view class="power_item" bindtap="jumpPage" data-type="{{ item.type }}" data-page="{{item.page}}">
-          <view class="power_item_title">{{item.title}}</view>
-          <image class="power_item_icon" src="../../images/arrow.svg"></image>
-        </view>
-      </view>
-    </view>
+<view class="page">
+  <view class="top-area">
+    <view class="eyebrow">智能成绩录入</view>
+    <view class="title">把纸上的成绩，轻松变成数据</view>
+    <button class="upload-button" bindtap="chooseImage" disabled="{{busy}}">
+      <text class="upload-icon">＋</text><text>拍摄 / 上传成绩表</text>
+    </button>
+    <view class="top-note">支持手写成绩表 · AI 识别后请逐项核对</view>
   </view>
-  <cloud-tip-modal showTipProps="{{showTip}}" title="{{title}}" content="{{content}}"></cloud-tip-modal>
+
+  <scroll-view class="form-scroll" scroll-y enable-flex>
+    <view class="form-content">
+      <view wx:if="{{imagePath}}" class="image-card card" bindtap="previewImage">
+        <image class="thumbnail" src="{{imagePath}}" mode="aspectFill" />
+        <view class="image-info"><view class="image-name">{{imageFileID ? '已上传成绩表' : '成绩表预览（未上传）'}}</view><view class="image-hint">点击查看原图，方便校对</view></view>
+        <view class="image-arrow">›</view>
+      </view>
+      <view class="section-heading"><text class="section-title">成绩信息</text><text class="section-caption">可随时修改</text></view>
+      <view class="meta-card card">
+        <view class="meta-field">
+          <view class="field-label">考试日期</view>
+          <picker mode="date" value="{{date}}" bindchange="onDateChange"><view class="picker-value">{{date}} <text class="chevron">⌄</text></view></picker>
+        </view>
+        <view class="meta-divider"></view>
+        <view class="meta-field">
+          <view class="field-label">科目</view>
+          <input class="subject-input" value="{{subject}}" placeholder="请输入科目，如：数学" maxlength="30" bindinput="onSubjectInput" />
+        </view>
+      </view>
+      <view class="section-heading score-heading"><text class="section-title">学生成绩</text><text class="section-caption">共 {{classSize}} 人</text></view>
+      <view class="score-card card">
+        <view class="score-header"><text>学号</text><text>成绩</text></view>
+        <view wx:for="{{scores}}" wx:key="studentNo" class="score-row">
+          <view class="student"><view class="student-badge">{{item.studentNo}}</view><text>学号 {{item.studentNo}}</text></view>
+          <input class="score-input" type="digit" value="{{item.score}}" placeholder="—" data-index="{{index}}" bindinput="onScoreInput" />
+        </view>
+      </view>
+      <view class="bottom-space"></view>
+    </view>
+  </scroll-view>
+  <view class="bottom-area"><button class="primary-button" bindtap="save" disabled="{{busy}}">提交保存</button></view>
+  <view wx:if="{{busy}}" class="busy-mask"><view class="busy-box"><view class="spinner"></view><text>{{busyText}}</text></view></view>
 </view>

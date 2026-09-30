@@ -45,7 +45,7 @@
     "disableSWC": true
   },
   "appid": "wx724b05595993125f",
-  "projectname": "quickstart-wx-cloud",
+  "projectname": "智能成绩录入",
   "libVersion": "2.20.1",
   "cloudfunctionTemplateRoot": "cloudfunctionTemplate/",
   "condition": {

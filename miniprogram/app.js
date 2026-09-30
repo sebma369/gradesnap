@@ -1,19 +1,14 @@
-// app.js
 App({
-  onLaunch: function () {
-    this.globalData = {
-      // env 参数说明：
-      // env 参数决定接下来小程序发起的云开发调用（wx.cloud.xxx）会请求到哪个云环境的资源
-      // 此处请填入环境 ID, 环境 ID 可在微信开发者工具右上顶部工具栏点击云开发按钮打开获取
-      env: "",
-    };
+  onLaunch() {
     if (!wx.cloud) {
-      console.error("请使用 2.2.3 或以上的基础库以使用云能力");
-    } else {
-      wx.cloud.init({
-        env: this.globalData.env,
-        traceUser: true,
-      });
+      wx.showModal({ title: '版本过低', content: '请更新微信后使用云开发功能。', showCancel: false });
+      return;
     }
+    // 多环境项目可在这里填入固定云环境 ID。
+    this.globalData = { env: '' };
+    const options = { traceUser: true };
+    if (this.globalData.env) options.env = this.globalData.env;
+    wx.cloud.init(options);
   },
+  globalData: { env: '' }
 });
