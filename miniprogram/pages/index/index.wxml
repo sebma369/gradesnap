@@ -22,7 +22,7 @@
         <view class="meta-divider"></view>
         <view class="meta-field">
           <view class="field-label">科目</view>
-          <picker mode="selector" range="{{subjects}}" value="{{subjectIndex}}" bindchange="onSubjectChange"><view class="picker-value {{subject ? '' : 'picker-placeholder'}}">{{subject || '请选择科目'}} <text class="chevron"></text></view></picker>
+          <picker mode="selector" range="{{subjects}}" value="{{subjectIndex}}" bindchange="onSubjectChange"><view class="picker-value {{subjectIndex >= 0 && subject ? '' : 'picker-placeholder'}}">{{subjectIndex >= 0 && subject ? subject : '请选择科目'}} <text class="chevron"></text></view></picker>
           <view wx:if="{{!subjects.length}}" class="field-hint">请先到设置页添加科目</view>
         </view>
         <view class="meta-divider"></view>
@@ -33,10 +33,11 @@
       </view>
       <view class="section-heading score-heading"><text class="section-title">学生成绩</text><text class="section-caption">共 {{classSize}} 人</text></view>
       <view class="score-card card">
-        <view class="score-header"><text>学号</text><text>成绩</text></view>
+        <view class="score-header"><view class="score-student">学号</view><view class="score-raw">识别结果</view><view class="score-value">成绩</view></view>
         <view wx:for="{{scores}}" wx:key="studentNo" class="score-row">
-          <view class="student"><view class="student-badge">{{item.studentNo}}</view><text>学号 {{item.studentNo}}</text></view>
-          <input class="score-input" type="text" value="{{item.score}}" placeholder="—" data-index="{{index}}" bindinput="onScoreInput" />
+          <view class="student score-student"><view class="student-badge">{{item.studentNo}}</view><text>学号 {{item.studentNo}}</text></view>
+          <view class="score-raw raw-text {{item.rawText ? '' : 'raw-placeholder'}}">{{item.rawText || '—'}}</view>
+          <input class="score-input score-value" type="text" value="{{item.score}}" placeholder="—" data-index="{{index}}" bindinput="onScoreInput" />
         </view>
       </view>
       <view class="bottom-space"></view>

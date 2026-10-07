@@ -170,13 +170,14 @@ async function recognize(event, openid) {
     : '根据图片中的科目文字识别科目；无法确定则填空字符串。';
   const prompt = [
     '识别这张手写成绩表中的日期、科目、内容、学号和成绩。',
-    '如果日期没有年份则默认为今年，无法确定的日期填空字符串。',
+    '如果日期没有年份则默认为今年，无法确定或置信度底的日期填空字符串。',
     subjectRule,
-    '内容取图片中明确写出的课题、练习或考试内容；若没有明确内容则填空字符串，不要用科目或日期代替，也不要猜测。',
-    '学号逐个读取，不要猜测或补充不存在的学号。学号保留前导零。',
+    '内容取图片中明确写出的课题、练习或考试内容；若没有明确内容或识别确信度不高则填空字符串，不要用科目或日期代替，也不要猜测。',
+    '学号逐个读取，不要猜测或补充不存在的学号。学号保留前导零。图片中已出现的学号即使成绩格为空，也要返回对应的 scores 条目。',
     '成绩有两种记分规则，第一种为字母等级，需要进行等级到数值的转换，A+ 对应 2 分，A 对应 0 分，A- 对应 0 分，B+ 对应 0 分，B 对应 -2 分，B- 对应 -2 分，所有C等级对应 -3 分，所有D等级对应 -4 分，空白对应 -2 分。老师手写成绩有时会在字母旁打一个点，请忽略此点号，不要将它识别为减号，如果无法确定识别，则将此成绩填为null。',
     '第二种记分方式中有以下规则：对勾符号对应0分，正值数字对应相应数值分（如 +4 对应 4 分），空白对应 -2 分。如果无法确定识别，则将此成绩填为null。',
-    '只返回 JSON 对象，字段名严格为 date、subject、content、scores；scores 中每项的字段名严格为 studentNo、score。date 为 YYYY-MM-DD 或空字符串；subject 和 content 为字符串，无法确定则为空字符串；score 为数字或 null。示例：{"date":"2026-10-07","subject":"数学","content":"单元练习","scores":[{"studentNo":"01","score":-2}]}。'
+    '每个学号的成绩先识别原始文本 rawText，再按上述规则转换为 score。rawText 必须原样保留图片中写出的内容，例如 A+、+4、√；确认为空白时填“空白”。有笔迹但无法辨认时 rawText和score都填 null，不要把无法辨认当作空白。',
+    '只返回 JSON 对象，字段名严格为 date、subject、content、scores；scores 中每项的字段名严格为 studentNo、rawText、score。date 为 YYYY-MM-DD 或空字符串；subject、content、rawText 为字符串；score 为数字或 null。示例：{"date":"2026-10-07","subject":"数学","content":"单元练习","scores":[{"studentNo":"01","rawText":"A+","score":2},{"studentNo":"02","rawText":"空白","score":-2}]}。'
   ].join('\n');
   const imageUrl = `data:${mime};base64,${image.toString('base64')}`;
   const response = await requestVision(endpoint, apiKey, {
@@ -194,6 +195,7 @@ async function recognize(event, openid) {
   catch (_) { throw new Error('AI 返回的数据格式不正确，请重试或手动填写'); }
   const scores = Array.isArray(parsed.scores) ? parsed.scores.filter(row => row && /^\d{1,3}$/.test(String(row.studentNo))).map(row => ({
     studentNo: String(row.studentNo).padStart(2, '0'),
+    rawText: typeof row.rawText === 'string' ? row.rawText : '',
     score: row.score == null || row.score === '' || !Number.isFinite(Number(row.score)) ? null : Number(row.score)
   })) : [];
   return {
@@ -207,7 +209,11 @@ async function recognize(event, openid) {
 async function exportRecords(openid, event) {
   const records = await listRecords(openid, event);
   assert(records.length, '当前日期范围暂无成绩记录');
-  const workbook = createWorkbook(records);
+  const settings = await getSettings(openid);
+  const workbook = createWorkbook(records, {
+    startDate: event.startDate, endDate: event.endDate,
+    classSize: settings.classSize, subjects: settings.subjects
+  });
   const startMonth = event.startDate.slice(0, 7);
   const endMonth = event.endDate.slice(0, 7);
   const rangeFolder = startMonth === endMonth ? startMonth : `${startMonth}_至_${endMonth}`;
@@ -215,7 +221,7 @@ async function exportRecords(openid, event) {
   const beijingTime = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
   const exportedAt = `${beijingTime.slice(0, 10)}_${beijingTime.slice(11, 23).replace(/[:.]/g, '-')}`;
   const uniqueSuffix = crypto.randomBytes(3).toString('hex');
-  const fileName = `成绩明细_${event.startDate}_至_${event.endDate}_导出于_${exportedAt}_${uniqueSuffix}.xlsx`;
+  const fileName = `成绩表_${event.startDate}_至_${event.endDate}_导出于_${exportedAt}_${uniqueSuffix}.xlsx`;
   const cloudPath = `成绩导出/${openid}/${rangeFolder}/${fileName}`;
   const result = await cloud.uploadFile({
     cloudPath,

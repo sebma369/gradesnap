@@ -13,10 +13,15 @@ function studentNo(index) {
 
 function rowsForSize(size, previous) {
   const byNo = {};
-  (previous || []).forEach(row => { byNo[row.studentNo] = row.score; });
+  (previous || []).forEach(row => { byNo[row.studentNo] = row; });
   return Array.from({ length: size }, (_, index) => {
     const no = studentNo(index);
-    return { studentNo: no, score: byNo[no] == null ? '' : String(byNo[no]) };
+    const row = byNo[no] || {};
+    return {
+      studentNo: no,
+      rawText: typeof row.rawText === 'string' ? row.rawText : '',
+      score: row.score == null ? '' : String(row.score)
+    };
   });
 }
 
