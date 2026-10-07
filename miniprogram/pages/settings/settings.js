@@ -2,53 +2,49 @@ const { DEFAULT_CLASS_SIZE, MAX_CLASS_SIZE, callGrade, errorMessage } = require(
 const MAX_SUBJECTS = 50;
 
 Page({
-  data: { classSize: String(DEFAULT_CLASS_SIZE), subjects: [], subjectDraft: '', saving: false },
+  data: { classSize: String(DEFAULT_CLASS_SIZE), className: '', subjects: [], subjectDraft: '', saving: false, loading: false, settingsReady: false },
   onShow() {
-    const cachedSubjects = wx.getStorageSync('subjects');
-    this.setData({
-      classSize: String(wx.getStorageSync('classSize') || DEFAULT_CLASS_SIZE),
-      subjects: Array.isArray(cachedSubjects) ? cachedSubjects : [],
-      subjectDraft: ''
-    });
+    this.setData({ classSize: String(DEFAULT_CLASS_SIZE), className: '', subjects: [], subjectDraft: '', settingsReady: false });
     this.load();
   },
   async load() {
-    const editVersion = this.editVersion || 0;
+    const requestId = this.settingsRequestId = (this.settingsRequestId || 0) + 1;
+    this.setData({ loading: true, settingsReady: false });
     try {
       const data = await callGrade('getSettings');
       const subjects = Array.isArray(data.subjects) ? data.subjects : [];
-      if ((this.editVersion || 0) !== editVersion || this.data.saving) return;
-      wx.setStorageSync('classSize', data.classSize);
-      wx.setStorageSync('subjects', subjects);
-      this.setData({ classSize: String(data.classSize), subjects });
+      if (requestId !== this.settingsRequestId) return;
+      this.setData({ classSize: String(data.classSize), className: data.className || '', subjects, loading: false, settingsReady: true });
     } catch (error) {
-      wx.showToast({ title: '云端设置读取失败，暂用本地缓存', icon: 'none' });
+      if (requestId !== this.settingsRequestId) return;
+      this.setData({ loading: false, settingsReady: false });
+      if (error.code !== 'CLASS_REQUIRED') wx.showToast({ title: '云端设置读取失败，请重试', icon: 'none' });
     }
   },
   onSizeInput(event) {
-    this.editVersion = (this.editVersion || 0) + 1;
+    if (!this.data.settingsReady) return;
     this.setData({ classSize: event.detail.value });
   },
   onSubjectInput(event) {
-    this.editVersion = (this.editVersion || 0) + 1;
+    if (!this.data.settingsReady) return;
     this.setData({ subjectDraft: event.detail.value });
   },
   onAddSubject() {
+    if (!this.data.settingsReady) return;
     const name = this.data.subjectDraft.trim();
     if (!name) return wx.showToast({ title: '请输入科目名称', icon: 'none' });
     if (this.data.subjects.includes(name)) return wx.showToast({ title: '该科目已存在', icon: 'none' });
     if (this.data.subjects.length >= MAX_SUBJECTS) return wx.showToast({ title: `最多设置 ${MAX_SUBJECTS} 个科目`, icon: 'none' });
-    this.editVersion = (this.editVersion || 0) + 1;
     this.setData({ subjects: [...this.data.subjects, name], subjectDraft: '' });
   },
   onRemoveSubject(event) {
+    if (!this.data.settingsReady) return;
     const index = Number(event.currentTarget.dataset.index);
     if (!Number.isInteger(index) || index < 0 || index >= this.data.subjects.length) return;
-    this.editVersion = (this.editVersion || 0) + 1;
     this.setData({ subjects: this.data.subjects.filter((_, i) => i !== index) });
   },
   async save() {
-    if (this.data.saving) return;
+    if (this.data.saving || !this.data.settingsReady) return;
     const size = Number(this.data.classSize);
     if (!Number.isInteger(size) || size < 1 || size > MAX_CLASS_SIZE) {
       return wx.showToast({ title: `请输入 1–${MAX_CLASS_SIZE} 的整数`, icon: 'none' });
@@ -63,9 +59,6 @@ Page({
     this.setData({ saving: true });
     try {
       await callGrade('saveSettings', { classSize: size, subjects });
-      wx.setStorageSync('classSize', size);
-      wx.setStorageSync('subjects', subjects);
-      this.editVersion = (this.editVersion || 0) + 1;
       this.setData({ subjects, subjectDraft: '' });
       wx.showToast({ title: '设置已保存', icon: 'success' });
     } catch (error) {

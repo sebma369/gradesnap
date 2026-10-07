@@ -1,5 +1,5 @@
 {
-  "pages": ["pages/index/index", "pages/export/export", "pages/settings/settings"],
+  "pages": ["pages/entry/entry", "pages/index/index", "pages/export/export", "pages/settings/settings", "pages/crop/crop"],
   "window": {
     "backgroundColor": "#F4F7FB",
     "navigationBarBackgroundColor": "#F4F7FB",

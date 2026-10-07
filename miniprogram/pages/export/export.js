@@ -17,7 +17,7 @@ Page({
       }));
       this.setData({ records, recordCount: records.length, scoreCount: records.reduce((sum, record) => sum + record.scores.length, 0), queried: true });
     } catch (error) {
-      wx.showModal({ title: '查询失败', content: errorMessage(error), showCancel: false });
+      if (error.code !== 'CLASS_REQUIRED') wx.showModal({ title: '查询失败', content: errorMessage(error), showCancel: false });
     } finally {
       this.setData({ loading: false });
     }
@@ -54,7 +54,7 @@ Page({
       }});
     } catch (error) {
       wx.hideLoading();
-      wx.showModal({ title: '导出失败', content: errorMessage(error), showCancel: false });
+      if (error.code !== 'CLASS_REQUIRED') wx.showModal({ title: '导出失败', content: errorMessage(error), showCancel: false });
     } finally {
       this.setData({ exporting: false });
     }

@@ -1,0 +1,17 @@
+<view class="entry-page">
+  <view class="dialog">
+    <view class="dialog-title">选择所属班级</view>
+    <view class="warning">请谨慎选择自己的班级，后续将不再提供班级修改选项，若没有目标班级，请联系管理员。</view>
+    <view wx:if="{{loading}}" class="status">正在读取用户和班级信息…</view>
+    <view wx:elif="{{loadError}}" class="status"><text>{{loadError}}</text><button class="retry-button" bindtap="loadSession">重新加载</button></view>
+    <view wx:elif="{{!classes.length}}" class="status"><text>暂无可选班级，请联系管理员创建班级。</text><button class="retry-button" bindtap="loadSession">重新加载</button></view>
+    <block wx:else>
+      <picker mode="selector" range="{{classes}}" range-key="className" value="{{selectedClassIndex}}" bindchange="onClassChange" disabled="{{saving}}">
+        <view class="class-picker-value {{selectedClassIndex < 0 ? 'class-picker-placeholder' : ''}}">
+          {{selectedClassName || '请选择班级'}}<text class="class-picker-chevron"></text>
+        </view>
+      </picker>
+      <button class="join-button" bindtap="joinClass" disabled="{{!selectedClassId || saving}}">{{saving ? '正在加入…' : '确认加入班级'}}</button>
+    </block>
+  </view>
+</view>

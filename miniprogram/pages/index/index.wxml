@@ -1,34 +1,39 @@
 <view class="page">
   <view class="top-area">
-    <button class="upload-button" bindtap="chooseImage" disabled="{{busy}}">
+    <button class="upload-button" bindtap="chooseImage" disabled="{{busy || selectingImage || !settingsReady}}">
       <text>拍摄 / 上传成绩表</text>
     </button>
-    <view class="top-note">支持手写成绩表 · AI 识别后请逐项核对</view>
+    <view wx:if="{{loadingSettings}}" class="top-note">正在读取云端班级设置…</view>
+    <view wx:elif="{{!settingsReady}}" class="top-note" bindtap="loadSettings">云端设置读取失败，点击重试</view>
+    <view wx:else class="top-note">支持手写成绩表 · AI 识别后请逐项核对</view>
+  </view>
+
+  <view wx:if="{{imagePath}}" class="image-fixed">
+    <view class="image-card card" bindtap="previewImage">
+      <image class="thumbnail" src="{{imagePath}}" mode="aspectFill" />
+      <view class="image-info"><view class="image-name">{{imageFileID ? '已上传成绩表' : '成绩表预览（未上传）'}}</view><view class="image-hint">点击查看图片，方便校对</view></view>
+      <view class="image-arrow">›</view>
+    </view>
   </view>
 
   <scroll-view class="form-scroll" scroll-y enable-flex>
     <view class="form-content">
-      <view wx:if="{{imagePath}}" class="image-card card" bindtap="previewImage">
-        <image class="thumbnail" src="{{imagePath}}" mode="aspectFill" />
-        <view class="image-info"><view class="image-name">{{imageFileID ? '已上传成绩表' : '成绩表预览（未上传）'}}</view><view class="image-hint">点击查看原图，方便校对</view></view>
-        <view class="image-arrow">›</view>
-      </view>
       <view class="section-heading"><text class="section-title">成绩信息</text><text class="section-caption">可随时修改</text></view>
       <view class="meta-card card">
         <view class="meta-field">
           <view class="field-label">日期</view>
-          <picker mode="date" value="{{date}}" bindchange="onDateChange"><view class="picker-value">{{date}} <text class="chevron"></text></view></picker>
+          <picker mode="date" value="{{date}}" bindchange="onDateChange" disabled="{{!settingsReady}}"><view class="picker-value">{{date}} <text class="chevron"></text></view></picker>
         </view>
         <view class="meta-divider"></view>
         <view class="meta-field">
           <view class="field-label">科目</view>
-          <picker mode="selector" range="{{subjects}}" value="{{subjectIndex}}" bindchange="onSubjectChange"><view class="picker-value {{subjectIndex >= 0 && subject ? '' : 'picker-placeholder'}}">{{subjectIndex >= 0 && subject ? subject : '请选择科目'}} <text class="chevron"></text></view></picker>
+          <picker mode="selector" range="{{subjects}}" value="{{subjectIndex}}" bindchange="onSubjectChange" disabled="{{!settingsReady}}"><view class="picker-value {{subjectIndex >= 0 && subject ? '' : 'picker-placeholder'}}">{{subjectIndex >= 0 && subject ? subject : '请选择科目'}} <text class="chevron"></text></view></picker>
           <view wx:if="{{!subjects.length}}" class="field-hint">请先到设置页添加科目</view>
         </view>
         <view class="meta-divider"></view>
         <view class="meta-field">
           <view class="field-label">内容</view>
-          <input class="subject-input" type="text" value="{{content}}" placeholder="请输入内容" maxlength="100" bindinput="onContentInput" />
+          <input class="subject-input" type="text" value="{{content}}" placeholder="请输入内容" maxlength="100" bindinput="onContentInput" disabled="{{!settingsReady}}" />
         </view>
       </view>
       <view class="section-heading score-heading"><text class="section-title">学生成绩</text><text class="section-caption">共 {{classSize}} 人</text></view>
@@ -37,13 +42,13 @@
         <view wx:for="{{scores}}" wx:key="studentNo" class="score-row">
           <view class="student score-student"><view class="student-badge">{{item.studentNo}}</view><text>学号 {{item.studentNo}}</text></view>
           <view class="score-raw raw-text {{item.rawText ? '' : 'raw-placeholder'}}">{{item.rawText || '—'}}</view>
-          <input class="score-input score-value" type="text" value="{{item.score}}" placeholder="—" data-index="{{index}}" bindinput="onScoreInput" />
+          <input class="score-input score-value" type="text" value="{{item.score}}" placeholder="—" data-index="{{index}}" bindinput="onScoreInput" disabled="{{!settingsReady}}" />
         </view>
       </view>
       <view class="bottom-space"></view>
     </view>
   </scroll-view>
-  <view class="bottom-area"><button class="primary-button" bindtap="save" disabled="{{busy}}">
+  <view class="bottom-area"><button class="primary-button" bindtap="save" disabled="{{busy || selectingImage || !settingsReady}}">
   <text>提交保存</text></button></view>
   <view wx:if="{{busy}}" class="busy-mask"><view class="busy-box"><view class="spinner"></view><text>{{busyText}}</text></view></view>
 </view>

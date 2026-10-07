@@ -34,7 +34,15 @@ function errorMessage(error, fallback) {
 async function callGrade(action, data) {
   const response = await wx.cloud.callFunction({ name: 'gradeService', data: Object.assign({ action }, data || {}) });
   const result = response.result;
-  if (!result || !result.ok) throw new Error(result && result.message || '云端服务暂不可用');
+  if (!result || !result.ok) {
+    const error = new Error(result && result.message || '云端服务暂不可用');
+    error.code = result && result.code || '';
+    if (error.code === 'CLASS_REQUIRED') {
+      const pages = getCurrentPages();
+      if (pages[pages.length - 1]?.route !== 'pages/entry/entry') wx.reLaunch({ url: '/pages/entry/entry' });
+    }
+    throw error;
+  }
   return result.data;
 }
 

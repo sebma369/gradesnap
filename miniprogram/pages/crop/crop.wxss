@@ -1,0 +1,19 @@
+.crop-page { height: 100vh; display: flex; flex-direction: column; background: #142238; color: #fff; }
+.crop-guide { flex: none; padding: 24rpx 30rpx; text-align: center; font-size: 25rpx; color: #d8e5f8; }
+.crop-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #0d1727; }
+.crop-image { position: absolute; display: block; }
+.crop-box { position: absolute; box-sizing: border-box; border: 3px solid #81bbff; box-shadow: 0 0 0 2000px rgba(4, 12, 24, .58); }
+.crop-handle { position: absolute; width: 36px; height: 36px; }
+.handle-dot { position: absolute; width: 12px; height: 12px; border-radius: 3px; background: #fff; border: 2px solid #3979d8; top: 10px; left: 10px; pointer-events: none; }
+.handle-nw { left: -19px; top: -19px; }
+.handle-ne { right: -19px; top: -19px; }
+.handle-sw { left: -19px; bottom: -19px; }
+.handle-se { right: -19px; bottom: -19px; }
+.crop-actions { flex: none; padding: 24rpx 32rpx 36rpx; background: #142238; }
+.crop-secondary { display: flex; justify-content: space-between; padding: 0 8rpx 24rpx; color: #c2d5ee; font-size: 26rpx; }
+.crop-buttons { display: flex; gap: 30rpx; }
+.crop-buttons button { flex: 1; border-radius: 18rpx; font-size: 29rpx; }
+.crop-cancel { background: #2a3c55; color: #fff; }
+.crop-confirm { background: #3979d8; color: #fff; }
+.crop-confirm[disabled] { background: #7a99c3; color: #fff; }
+.export-canvas { position: fixed; left: -10000px; top: 0; }

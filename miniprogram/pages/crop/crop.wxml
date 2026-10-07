@@ -1,0 +1,17 @@
+<view class="crop-page">
+  <view class="crop-guide">拖动选框调整位置，拖动四角自由调整宽高</view>
+  <view class="crop-stage">
+    <image wx:if="{{ready}}" class="crop-image" src="{{source}}" mode="scaleToFill" style="{{imageStyle}}" />
+    <view wx:if="{{ready}}" class="crop-box" style="{{cropStyle}}" catchtouchstart="onTouchStart" catchtouchmove="onTouchMove" catchtouchend="onTouchEnd" catchtouchcancel="onTouchEnd">
+      <view class="crop-handle handle-nw" data-handle="nw" catchtouchstart="onTouchStart" catchtouchmove="onTouchMove" catchtouchend="onTouchEnd" catchtouchcancel="onTouchEnd"><view class="handle-dot"></view></view>
+      <view class="crop-handle handle-ne" data-handle="ne" catchtouchstart="onTouchStart" catchtouchmove="onTouchMove" catchtouchend="onTouchEnd" catchtouchcancel="onTouchEnd"><view class="handle-dot"></view></view>
+      <view class="crop-handle handle-sw" data-handle="sw" catchtouchstart="onTouchStart" catchtouchmove="onTouchMove" catchtouchend="onTouchEnd" catchtouchcancel="onTouchEnd"><view class="handle-dot"></view></view>
+      <view class="crop-handle handle-se" data-handle="se" catchtouchstart="onTouchStart" catchtouchmove="onTouchMove" catchtouchend="onTouchEnd" catchtouchcancel="onTouchEnd"><view class="handle-dot"></view></view>
+    </view>
+  </view>
+  <view class="crop-actions">
+    <view class="crop-secondary"><text bindtap="resetCrop">重置选区</text><text bindtap="useOriginal">使用原图</text></view>
+    <view class="crop-buttons"><button class="crop-cancel" bindtap="cancelCrop" disabled="{{exporting}}">取消</button><button class="crop-confirm" bindtap="confirmCrop" disabled="{{!ready || exporting}}">{{exporting ? '正在裁剪…' : '确认裁剪'}}</button></view>
+  </view>
+  <canvas canvas-id="cropCanvas" class="export-canvas" style="width:{{canvasWidth}}px;height:{{canvasHeight}}px;"></canvas>
+</view>

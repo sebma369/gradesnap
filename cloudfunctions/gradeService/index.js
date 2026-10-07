@@ -7,6 +7,7 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
 const _ = db.command;
 const MAX_CLASS_SIZE = 200;
+const MAX_CLASSES = 500;
 const MAX_SUBJECTS = 50;
 const MAX_RECORDS = 300;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -17,33 +18,108 @@ function validDate(value) {
   const date = new Date(value + 'T00:00:00Z');
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
-function currentUser() {
-  const openid = cloud.getWXContext().OPENID;
-  assert(openid, '无法获取当前微信用户身份');
-  return openid;
+
+function classInfo(record) {
+  assert(record && /^[A-Za-z0-9_-]{1,64}$/.test(record._id), '班级 ID 无效，请联系管理员');
+  const name = String(record.name || '').trim();
+  assert(name && name.length <= 50, '班级名称无效，请联系管理员');
+  return { classId: record._id, className: name };
 }
 
-async function getSettings(openid) {
-  const result = await db.collection('settings').where({ _id: openid }).limit(1).get();
+async function findClass(classId) {
+  const result = await db.collection('classes').where({ _id: classId }).limit(1).get();
+  return result.data[0];
+}
+
+async function findUser(openId) {
+  const result = await db.collection('users').where({ _id: openId }).limit(1).get();
+  return result.data[0];
+}
+
+async function currentClass(openId, knownUser) {
+  const user = knownUser || await findUser(openId);
+  if (!user || !user.classId) {
+    const error = new Error('请先选择所属班级');
+    error.code = 'CLASS_REQUIRED';
+    throw error;
+  }
+  const record = await findClass(user.classId);
+  assert(record, '所属班级不存在，请联系管理员');
+  return classInfo(record);
+}
+
+async function getSession(openId) {
+  const user = await findUser(openId);
+  if (user) return { registered: true, ...await currentClass(openId, user) };
+  const records = [];
+  for (let offset = 0; offset <= MAX_CLASSES; offset += 100) {
+    const result = await db.collection('classes').orderBy('_id', 'asc').skip(offset).limit(100).get();
+    records.push(...result.data);
+    assert(records.length <= MAX_CLASSES, '可选班级过多，请联系管理员');
+    if (result.data.length < 100) break;
+  }
+  const classOrder = record => {
+    if (record.order === undefined || record.order === null || record.order === '') return Infinity;
+    const value = Number(record.order);
+    return Number.isFinite(value) ? value : Infinity;
+  };
+  const classes = records.filter(record => record.active !== false)
+    .sort((a, b) => {
+      const first = classOrder(a);
+      const second = classOrder(b);
+      if (first !== second) return first < second ? -1 : 1;
+      return String(a.name).localeCompare(String(b.name), 'zh-CN') || a._id.localeCompare(b._id);
+    })
+    .map(classInfo);
+  return { registered: false, classes };
+}
+
+async function joinClass(openId, event) {
+  const classId = String(event.classId || '');
+  assert(/^[A-Za-z0-9_-]{1,64}$/.test(classId), '请选择有效班级');
+  const record = await findClass(classId);
+  assert(record && record.active !== false, '该班级不可选，请重新选择');
+  const selected = classInfo(record);
+  const existing = await findUser(openId);
+  if (existing) {
+    assert(existing.classId === classId, '班级已绑定，不能自行修改，请联系管理员');
+    return { registered: true, ...selected };
+  }
+  try {
+    await db.collection('users').add({ data: {
+      _id: openId, classId, createTime: db.serverDate(), updateTime: db.serverDate()
+    }});
+  } catch (error) {
+    const current = await findUser(openId);
+    if (!current) throw error;
+    assert(current.classId === classId, '班级已绑定，不能自行修改，请联系管理员');
+  }
+  return { registered: true, ...selected };
+}
+
+async function getSettings(classContext) {
+  const result = await db.collection('settings').where({ _id: classContext.classId }).limit(1).get();
   const settings = result.data[0] || {};
   return {
+    ...classContext,
     classSize: settings.classSize || 30,
     subjects: Array.isArray(settings.subjects) ? settings.subjects : []
   };
 }
 
-async function saveSettings(openid, event) {
+async function saveSettings(event, classContext) {
   const size = Number(event.classSize);
   assert(Number.isInteger(size) && size >= 1 && size <= MAX_CLASS_SIZE, '班级人数需为 1–200 的整数');
-  const subjects = event.subjects === undefined ? (await getSettings(openid)).subjects : event.subjects;
+  const subjects = event.subjects;
   assert(Array.isArray(subjects) && subjects.length <= MAX_SUBJECTS, `科目数量不能超过 ${MAX_SUBJECTS} 个`);
   const cleanSubjects = subjects.map(name => {
     assert(typeof name === 'string' && name.trim().length >= 1 && name.trim().length <= 30, '科目名称需为 1–30 字');
     return name.trim();
   });
   assert(new Set(cleanSubjects).size === cleanSubjects.length, '科目不能重复');
-  await db.collection('settings').doc(openid).set({ data: { classSize: size, subjects: cleanSubjects, updateTime: db.serverDate() } });
-  return { classSize: size, subjects: cleanSubjects };
+  const data = { classId: classContext.classId, classSize: size, subjects: cleanSubjects, updateTime: db.serverDate() };
+  await db.collection('settings').doc(classContext.classId).set({ data });
+  return { ...classContext, classSize: size, subjects: cleanSubjects };
 }
 
 function validateScores(scores) {
@@ -62,7 +138,7 @@ function validateScores(scores) {
   return clean;
 }
 
-async function saveRecord(openid, event) {
+async function saveRecord(event, classContext, openId) {
   assert(validDate(event.date), '日期格式不正确');
   const subject = String(event.subject || '').trim();
   assert(subject && subject.length <= 30, '请选择有效科目');
@@ -70,21 +146,22 @@ async function saveRecord(openid, event) {
   assert(content.length <= 100, '内容不能超过 100 字');
   const scores = validateScores(event.scores);
   const imageFileID = String(event.imageFileID || '');
-  assert(!imageFileID || imageFileID.startsWith('cloud://'), '图片地址无效');
+  assert(!imageFileID || (imageFileID.startsWith('cloud://') && imageFileID.includes(`/score-sheets/${classContext.classId}/`)), '图片不属于当前班级');
   const result = await db.collection('scoreRecords').add({ data: {
-    ownerOpenId: openid, date: event.date, subject, content, scores, imageFileID,
+    classId: classContext.classId, createdByOpenId: openId,
+    date: event.date, subject, content, scores, imageFileID,
     createTime: db.serverDate(), updateTime: db.serverDate()
   }});
   return { id: result._id };
 }
 
-async function listRecords(openid, event) {
+async function listRecords(event, classContext) {
   assert(validDate(event.startDate) && validDate(event.endDate), '请选择有效日期范围');
   assert(event.startDate <= event.endDate, '起始日期不能晚于截止日期');
   const records = [];
   for (let offset = 0; offset <= MAX_RECORDS; offset += 100) {
     const result = await db.collection('scoreRecords')
-      .where({ ownerOpenId: openid, date: _.gte(event.startDate).and(_.lte(event.endDate)) })
+      .where({ classId: classContext.classId, date: _.gte(event.startDate).and(_.lte(event.endDate)) })
       .orderBy('date', 'asc')
       .skip(offset).limit(100).get();
     records.push(...result.data);
@@ -151,16 +228,16 @@ function imageMime(buffer) {
   throw new Error('仅支持 JPG、PNG 或 WebP 图片');
 }
 
-async function recognize(event, openid) {
+async function recognize(event, classContext) {
   const fileID = String(event.imageFileID || '');
-  assert(fileID.startsWith('cloud://') && fileID.includes('/score-sheets/'), '请先上传成绩表图片');
+  assert(fileID.startsWith('cloud://') && fileID.includes(`/score-sheets/${classContext.classId}/`), '请先上传当前班级的成绩表图片');
   const apiKey = process.env.AI_API_KEY;
   const model = process.env.AI_MODEL;
   const baseUrl = process.env.AI_API_URL;
   assert(apiKey && model && baseUrl, '识别服务尚未配置，请在云函数环境变量中设置 AI_API_KEY、AI_MODEL 和 AI_API_URL');
   const endpoint = `${baseUrl.replace(/\/+$/, '')}/v1/chat/completions`;
   const [downloaded, settings] = await Promise.all([
-    cloud.downloadFile({ fileID }), getSettings(openid)
+    cloud.downloadFile({ fileID }), getSettings(classContext)
   ]);
   const image = downloaded.fileContent;
   assert(image && image.length && image.length <= 8 * 1024 * 1024, '图片过大，请压缩到 8MB 以内');
@@ -172,7 +249,7 @@ async function recognize(event, openid) {
     '识别这张手写成绩表中的日期、科目、内容、学号和成绩。',
     '如果日期没有年份则默认为今年，无法确定或置信度底的日期填空字符串。',
     subjectRule,
-    '内容取图片中明确写出的课题、练习或考试内容；若没有明确内容或识别确信度不高则填空字符串，不要用科目或日期代替，也不要猜测。',
+    '内容取图片中明确写出的课题、练习或考试内容；若没有明确内容或识别确信度不高则填空字符串，不要用科目或日期代替，也不要猜测，不要使用图片中没有出现过的字词。',
     '学号逐个读取，不要猜测或补充不存在的学号。学号保留前导零。图片中已出现的学号即使成绩格为空，也要返回对应的 scores 条目。',
     '成绩有两种记分规则，第一种为字母等级，需要进行等级到数值的转换，A+ 对应 2 分，A 对应 0 分，A- 对应 0 分，B+ 对应 0 分，B 对应 -2 分，B- 对应 -2 分，所有C等级对应 -3 分，所有D等级对应 -4 分，空白对应 -2 分。老师手写成绩有时会在字母旁打一个点，请忽略此点号，不要将它识别为减号，如果无法确定识别，则将此成绩填为null。',
     '第二种记分方式中有以下规则：对勾符号对应0分，正值数字对应相应数值分（如 +4 对应 4 分），空白对应 -2 分。如果无法确定识别，则将此成绩填为null。',
@@ -206,10 +283,10 @@ async function recognize(event, openid) {
   };
 }
 
-async function exportRecords(openid, event) {
-  const records = await listRecords(openid, event);
+async function exportRecords(event, classContext) {
+  const records = await listRecords(event, classContext);
   assert(records.length, '当前日期范围暂无成绩记录');
-  const settings = await getSettings(openid);
+  const settings = await getSettings(classContext);
   const workbook = createWorkbook(records, {
     startDate: event.startDate, endDate: event.endDate,
     classSize: settings.classSize, subjects: settings.subjects
@@ -222,7 +299,7 @@ async function exportRecords(openid, event) {
   const exportedAt = `${beijingTime.slice(0, 10)}_${beijingTime.slice(11, 23).replace(/[:.]/g, '-')}`;
   const uniqueSuffix = crypto.randomBytes(3).toString('hex');
   const fileName = `成绩表_${event.startDate}_至_${event.endDate}_导出于_${exportedAt}_${uniqueSuffix}.xlsx`;
-  const cloudPath = `成绩导出/${openid}/${rangeFolder}/${fileName}`;
+  const cloudPath = `成绩导出/${classContext.classId}/${rangeFolder}/${fileName}`;
   const result = await cloud.uploadFile({
     cloudPath,
     fileContent: workbook
@@ -232,20 +309,26 @@ async function exportRecords(openid, event) {
 
 exports.main = async event => {
   try {
-    const openid = currentUser();
+    const openId = cloud.getWXContext().OPENID;
+    assert(openId, '无法确认微信用户身份，请从小程序重新进入');
     let data;
-    switch (event.action) {
-      case 'getSettings': data = await getSettings(openid); break;
-      case 'saveSettings': data = await saveSettings(openid, event); break;
-      case 'saveRecord': data = await saveRecord(openid, event); break;
-      case 'listRecords': data = { records: await listRecords(openid, event) }; break;
-      case 'recognize': data = await recognize(event, openid); break;
-      case 'exportRecords': data = await exportRecords(openid, event); break;
-      default: throw new Error('不支持的操作');
+    if (event.action === 'getSession') data = await getSession(openId);
+    else if (event.action === 'joinClass') data = await joinClass(openId, event);
+    else {
+      const classContext = await currentClass(openId);
+      switch (event.action) {
+        case 'getSettings': data = await getSettings(classContext); break;
+        case 'saveSettings': data = await saveSettings(event, classContext); break;
+        case 'saveRecord': data = await saveRecord(event, classContext, openId); break;
+        case 'listRecords': data = { records: await listRecords(event, classContext) }; break;
+        case 'recognize': data = await recognize(event, classContext); break;
+        case 'exportRecords': data = await exportRecords(event, classContext); break;
+        default: throw new Error('不支持的操作');
+      }
     }
     return { ok: true, data };
   } catch (error) {
-    console.error('gradeService:', error);
-    return { ok: false, message: error.message || '云端服务暂不可用' };
+    if (error.code !== 'CLASS_REQUIRED') console.error('gradeService:', error);
+    return { ok: false, code: error.code || '', message: error.message || '云端服务暂不可用' };
   }
 };

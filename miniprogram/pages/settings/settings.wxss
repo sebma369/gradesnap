@@ -8,3 +8,8 @@
 .subject-row:first-of-type { margin-top: 22rpx; }
 .subject-name { flex: 1; min-width: 0; text-align: center; font-size: 28rpx; line-height: 1.5; color: #243956; }
 .remove-button { flex: none; width: 112rpx; height: 64rpx; line-height: 64rpx; margin: 0; padding: 0; text-align: center; background: transparent; color: #d26969; font-size: 25rpx; }
+.sync-hint { display: flex; align-items: center; gap: 16rpx; color: #6480a1; font-size: 25rpx; margin: -12rpx 0 24rpx; }
+.retry-button { flex: none; margin: 0; padding: 0 20rpx; font-size: 24rpx; line-height: 60rpx; }
+.heading-line { display: flex; align-items: center; flex-wrap: wrap; gap: 16rpx; margin-top: 12rpx; }
+.heading-line .heading { margin-top: 0; }
+.class-name { color: #3979d8; background: #eaf2fd; padding: 8rpx 16rpx; border-radius: 14rpx; font-size: 25rpx; font-weight: 600; }

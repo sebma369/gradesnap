@@ -5,9 +5,10 @@
 .upload-icon { font-size: 44rpx; font-weight: 300; margin-right: 14rpx; line-height: 1; }
 .upload-button[disabled] { background: #9ab9e5; color: #fff; }
 .top-note { text-align: center; color: #94a2b3; font-size: 23rpx; margin-top: 18rpx; }
+.image-fixed { flex: none; padding: 0 36rpx 14rpx; background: #f4f7fb; }
 .form-scroll { flex: 1; min-height: 0; }
 .form-content { padding: 12rpx 36rpx 0; }
-.image-card { display: flex; align-items: center; padding: 16rpx; margin-bottom: 30rpx; }
+.image-card { display: flex; align-items: center; padding: 16rpx; }
 .thumbnail { width: 82rpx; height: 82rpx; border-radius: 12rpx; background: #edf2f7; }
 .image-info { flex: 1; margin-left: 18rpx; }.image-name { font-size: 28rpx; font-weight: 600; }.image-hint { color: #8b9bb0; font-size: 23rpx; margin-top: 7rpx; }.image-arrow { color: #a8b3c1; font-size: 42rpx; padding: 0 12rpx; }
 .section-heading { display: flex; align-items: baseline; justify-content: space-between; margin: 16rpx 4rpx 18rpx; }.section-caption { color: #9aa7b7; font-size: 23rpx; }
