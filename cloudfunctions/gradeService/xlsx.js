@@ -61,16 +61,16 @@ function numberCell(column, row, value) {
 }
 
 function createWorkbook(records) {
-  const rows = [`<row r="1">${textCell('A', 1, '日期')}${textCell('B', 1, '科目')}${textCell('C', 1, '学号')}${textCell('D', 1, '成绩')}</row>`];
+  const rows = [`<row r="1">${textCell('A', 1, '日期')}${textCell('B', 1, '科目')}${textCell('C', 1, '内容')}${textCell('D', 1, '学号')}${textCell('E', 1, '成绩')}</row>`];
   let line = 2;
   for (const record of records) {
     for (const entry of record.scores) {
       if (entry.score == null) continue;
-      rows.push(`<row r="${line}">${textCell('A', line, record.date)}${textCell('B', line, record.subject)}${textCell('C', line, entry.studentNo)}${numberCell('D', line, entry.score)}</row>`);
+      rows.push(`<row r="${line}">${textCell('A', line, record.date)}${textCell('B', line, record.subject)}${textCell('C', line, record.content || '')}${textCell('D', line, entry.studentNo)}${numberCell('E', line, entry.score)}</row>`);
       line++;
     }
   }
-  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:D${line - 1}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="16" customWidth="1"/><col min="2" max="2" width="20" customWidth="1"/><col min="3" max="3" width="12" customWidth="1"/><col min="4" max="4" width="12" customWidth="1"/></cols><sheetData>${rows.join('')}</sheetData></worksheet>`;
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:E${line - 1}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="16" customWidth="1"/><col min="2" max="2" width="20" customWidth="1"/><col min="3" max="3" width="32" customWidth="1"/><col min="4" max="4" width="12" customWidth="1"/><col min="5" max="5" width="12" customWidth="1"/></cols><sheetData>${rows.join('')}</sheetData></worksheet>`;
   return zip([
     ['[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'],
     ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],

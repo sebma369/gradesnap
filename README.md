@@ -10,24 +10,22 @@
 4. 在开发者工具中右键 `cloudfunctions/gradeService`，选择“上传并部署：云端安装依赖”。云函数运行时使用 Node.js 16 或更新版本。
 5. 在该云函数的环境变量中配置：
 
-   - `AI_API_URL`：兼容 Chat Completions 视觉消息格式的 HTTPS 接口完整地址，例如服务商的 `/v1/chat/completions` 地址。
-   - `AI_MODEL`：支持图片输入的模型名称。
-   - `AI_API_KEY`：对应的服务端密钥。
+   - `AI_API_URL`：AI 服务根地址，例如 `https://ai.example.com`。不要填写 `/v1/chat/completions`；云函数会自动拼接该路径。
+   - `AI_API_KEY`：该服务的 API Key，只配置在云函数中。
+   - `AI_MODEL`：该服务中支持图片输入的模型名称。
 
-   云函数通过 HTTPS 发送图片的 base64 数据；密钥不会进入小程序代码。请按所用模型服务商的要求配置云函数外网访问和超时时间（建议至少 60 秒）。未配置 AI 时仍可手动录入成绩。
+   云函数使用 HTTPS POST 向 `AI_API_URL/v1/chat/completions` 发送图片的 base64 数据，不会直接请求 OpenAI 官方地址，API Key 也不会进入小程序代码。保存环境变量后重新部署 `gradeService`；请确认云函数运行环境能访问该服务域名，并将云函数超时时间设为至少 60 秒。未配置 AI 时仍可手动录入成绩。
 
 6. 在开发者工具中编译并用真机测试拍照、云存储、识别、查询及文件分享。
 
 ## 数据结构
 
-- `settings`：以当前用户 OpenID 为文档 ID，保存 `classSize`、`updateTime`。
-- `scoreRecords`：保存 `ownerOpenId`、`date`、`subject`、`scores`、`imageFileID`、`createTime`、`updateTime`。`scores` 为 `{ studentNo: "01", score: 95 }` 数组；未填写成绩保存为 `null`。
-- 原图上传到云存储 `score-sheets/`；导出的 Excel 暂存于 `exports/<OpenID>/`。可根据运营需要在云存储设置清理策略。
+- `settings`：以当前用户 OpenID 为文档 ID，保存 `classSize`、`subjects`（科目名称数组）、`updateTime`。
+- `scoreRecords`：保存 `ownerOpenId`、`date`、`subject`、`content`、`scores`、`imageFileID`、`createTime`、`updateTime`。`content` 可留空；`scores` 为 `{ studentNo: "01", score: 95 }` 数组，未填写成绩保存为 `null`。
+- 原图上传到云存储 `score-sheets/`；导出的 Excel 按教师和查询月份范围保存在 `成绩导出/<OpenID>/<月份或月份范围>/`，文件名包含成绩起止日期和北京时间导出时刻。例如 `成绩明细_2026-10-01_至_2026-10-31_导出于_2026-11-01_09-30-00-123_a1b2c3.xlsx`，末尾短码用于避免重名。本地保存和分享沿用同一文件名。可根据运营需要在云存储设置清理策略。
 
 成绩按当前微信用户隔离，云函数从微信上下文取得 OpenID，不接受前端传入身份。单次查询最多 300 条成绩表记录；超过时会提示缩小日期范围。
 
 ## 使用
 
-先在“设置”页保存班级人数。在“录入”页拍照或选图，等待识别并校对日期、科目与每位学生成绩，然后提交保存。空成绩可保留，至少填写一位学生。到“导出”页选日期并查询；确认导出后可在微信中预览 Excel、保存到小程序，或分享文件到微信聊天。预览页右上角菜单也可转存文件。
-
-`cloudfunctions/quickstartFunctions` 和 `miniprogram/pages/example` 是仓库原有云开发示例，当前小程序不再引用，可供参考。
+先在“设置”页保存班级人数并添加科目。科目列表保存在云端，可增删；删除科目不会修改历史成绩。在“录入”页拍照或选图，等待识别并校对日期、科目、自动回填的“内容”及每位学生成绩；这些字段均可人工修改，“内容”也可留空。确认后提交保存。空成绩可保留，至少填写一位学生。到“导出”页选日期并查询；预览与 Excel 会显示“内容”。确认导出后可在微信中预览 Excel、保存到小程序，或分享文件到微信聊天。预览页右上角菜单也可转存文件。

@@ -5,7 +5,7 @@ App({
       return;
     }
     // 多环境项目可在这里填入固定云环境 ID。
-    this.globalData = { env: '' };
+    this.globalData = { env: 'cloud1-d0gyldamkf4af1ab7' };
     const options = { traceUser: true };
     if (this.globalData.env) options.env = this.globalData.env;
     wx.cloud.init(options);

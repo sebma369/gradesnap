@@ -2,14 +2,16 @@ const { DEFAULT_CLASS_SIZE, today, rowsForSize, errorMessage, callGrade } = requ
 
 Page({
   data: {
-    date: today(), subject: '', classSize: DEFAULT_CLASS_SIZE,
+    date: today(), subject: '', subjectIndex: 0, subjects: [], content: '', classSize: DEFAULT_CLASS_SIZE,
     scores: rowsForSize(DEFAULT_CLASS_SIZE), imageFileID: '', imagePath: '',
     busy: false, busyText: '', recognized: false
   },
 
   onShow() {
     const cached = Number(wx.getStorageSync('classSize')) || DEFAULT_CLASS_SIZE;
+    const cachedSubjects = wx.getStorageSync('subjects');
     this.applyClassSize(cached);
+    this.applySubjects(Array.isArray(cachedSubjects) ? cachedSubjects : []);
     this.loadSettings();
   },
 
@@ -17,8 +19,11 @@ Page({
     try {
       const settings = await callGrade('getSettings');
       const size = settings.classSize || DEFAULT_CLASS_SIZE;
+      const subjects = Array.isArray(settings.subjects) ? settings.subjects : [];
       wx.setStorageSync('classSize', size);
+      wx.setStorageSync('subjects', subjects);
       this.applyClassSize(size);
+      this.applySubjects(subjects);
     } catch (error) {
       wx.showToast({ title: '云端设置读取失败，暂用本地缓存', icon: 'none' });
     }
@@ -27,6 +32,11 @@ Page({
   applyClassSize(size) {
     if (size < 1 || size > 200 || size === this.data.classSize) return;
     this.setData({ classSize: size, scores: rowsForSize(size, this.data.scores) });
+  },
+
+  applySubjects(subjects) {
+    const index = subjects.indexOf(this.data.subject);
+    this.setData({ subjects, subject: index >= 0 ? this.data.subject : '', subjectIndex: index >= 0 ? index : 0 });
   },
 
   chooseImage() {
@@ -47,12 +57,17 @@ Page({
       this.setData({ imageFileID: upload.fileID, imagePath: path, busyText: '正在识别成绩表…' });
       const result = await callGrade('recognize', { imageFileID: upload.fileID });
       const recognized = (result.scores || []).map(row => ({ studentNo: String(row.studentNo).padStart(2, '0'), score: row.score }));
+      const recognizedSubject = String(result.subject || '').trim();
+      const subjectIndex = this.data.subjects.indexOf(recognizedSubject);
       this.setData({
         date: result.date || this.data.date,
-        subject: result.subject || this.data.subject,
+        subject: subjectIndex >= 0 ? recognizedSubject : '', subjectIndex: subjectIndex >= 0 ? subjectIndex : 0,
+        content: typeof result.content === 'string' ? result.content : '',
         scores: rowsForSize(this.data.classSize, recognized), recognized: true
       });
-      if (recognized.some(row => row.score !== null && row.score !== '')) {
+      if (recognizedSubject && subjectIndex < 0) {
+        wx.showModal({ title: '请选择科目', content: `识别到“${recognizedSubject}”，但科目设置中没有该项。请从现有科目中选择，或到设置页添加。`, showCancel: false });
+      } else if (recognized.some(row => row.score !== null && row.score !== '')) {
         wx.showToast({ title: '识别完成，请核对', icon: 'success' });
       } else {
         wx.showModal({ title: '未识别到成绩', content: '请查看原图并手动填写成绩后保存。', showCancel: false });
@@ -68,7 +83,11 @@ Page({
   },
 
   onDateChange(event) { this.setData({ date: event.detail.value }); },
-  onSubjectInput(event) { this.setData({ subject: event.detail.value }); },
+  onSubjectChange(event) {
+    const index = Number(event.detail.value);
+    this.setData({ subject: this.data.subjects[index] || '', subjectIndex: index });
+  },
+  onContentInput(event) { this.setData({ content: event.detail.value }); },
   onScoreInput(event) {
     const index = Number(event.currentTarget.dataset.index);
     this.setData({ [`scores[${index}].score`]: event.detail.value });
@@ -79,20 +98,20 @@ Page({
 
   async save() {
     if (this.data.busy) return;
-    const subject = this.data.subject.trim();
-    if (!subject) return wx.showToast({ title: '请填写科目', icon: 'none' });
-    const invalid = this.data.scores.find(row => row.score !== '' && !/^(?:\d+)(?:\.\d+)?$/.test(String(row.score)));
+    const subject = this.data.subject;
+    if (!this.data.subjects.includes(subject)) return wx.showToast({ title: '请先在设置页添加并选择科目', icon: 'none' });
+    const invalid = this.data.scores.find(row => row.score !== '' && !/^-?\d+(?:\.\d+)?$/.test(String(row.score)));
     if (invalid) return wx.showToast({ title: `请检查学号 ${invalid.studentNo} 的成绩`, icon: 'none' });
     const filled = this.data.scores.filter(row => row.score !== '').length;
     if (!filled) return wx.showToast({ title: '请至少填写一位学生的成绩', icon: 'none' });
     this.setData({ busy: true, busyText: '正在保存成绩…' });
     try {
       await callGrade('saveRecord', {
-        date: this.data.date, subject,
+        date: this.data.date, subject, content: this.data.content,
         scores: this.data.scores.map(row => ({ studentNo: row.studentNo, score: row.score === '' ? null : Number(row.score) })),
         imageFileID: this.data.imageFileID
       });
-      this.setData({ subject: '', scores: rowsForSize(this.data.classSize), imageFileID: '', imagePath: '', recognized: false });
+      this.setData({ subject: '', subjectIndex: 0, content: '', scores: rowsForSize(this.data.classSize), imageFileID: '', imagePath: '', recognized: false });
       wx.showModal({ title: '保存成功', content: '本次成绩已保存到云端，可在“导出”页查询。', showCancel: false });
     } catch (error) {
       wx.showModal({ title: '保存失败', content: errorMessage(error), showCancel: false });
