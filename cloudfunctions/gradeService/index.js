@@ -36,21 +36,46 @@ async function findUser(openId) {
   return result.data[0];
 }
 
-async function currentClass(openId, knownUser) {
-  const user = knownUser || await findUser(openId);
-  if (!user || !user.classId) {
-    const error = new Error('请先选择所属班级');
-    error.code = 'CLASS_REQUIRED';
-    throw error;
+function classRequired(message) {
+  const error = new Error(message);
+  error.code = 'CLASS_REQUIRED';
+  throw error;
+}
+
+async function currentClass(openId, selectedClassId) {
+  const user = await findUser(openId);
+  if (!user) classRequired('请先选择所属班级');
+  if (!Array.isArray(user.classId) || !user.classId.length) classRequired('用户班级配置无效，请联系管理员');
+  if (typeof selectedClassId !== 'string' || !user.classId.includes(selectedClassId)) {
+    classRequired('当前班级未授权，请重新选择');
   }
-  const record = await findClass(user.classId);
+  const record = await findClass(selectedClassId);
   assert(record, '所属班级不存在，请联系管理员');
   return classInfo(record);
 }
 
+function sortClasses(records) {
+  const classOrder = record => {
+    if (record.order === undefined || record.order === null || record.order === '') return Infinity;
+    const value = Number(record.order);
+    return Number.isFinite(value) ? value : Infinity;
+  };
+  return records.sort((a, b) => {
+    const first = classOrder(a);
+    const second = classOrder(b);
+    if (first !== second) return first < second ? -1 : 1;
+    return String(a.name).localeCompare(String(b.name), 'zh-CN') || a._id.localeCompare(b._id);
+  }).map(classInfo);
+}
+
 async function getSession(openId) {
   const user = await findUser(openId);
-  if (user) return { registered: true, ...await currentClass(openId, user) };
+  if (user) {
+    assert(Array.isArray(user.classId) && user.classId.length && user.classId.length <= MAX_CLASSES && new Set(user.classId).size === user.classId.length, '用户班级配置无效，请联系管理员');
+    const records = await Promise.all(user.classId.map(findClass));
+    assert(records.every(Boolean), '所属班级不存在，请联系管理员');
+    return { registered: true, classes: sortClasses(records) };
+  }
   const records = [];
   for (let offset = 0; offset <= MAX_CLASSES; offset += 100) {
     const result = await db.collection('classes').orderBy('_id', 'asc').skip(offset).limit(100).get();
@@ -58,43 +83,32 @@ async function getSession(openId) {
     assert(records.length <= MAX_CLASSES, '可选班级过多，请联系管理员');
     if (result.data.length < 100) break;
   }
-  const classOrder = record => {
-    if (record.order === undefined || record.order === null || record.order === '') return Infinity;
-    const value = Number(record.order);
-    return Number.isFinite(value) ? value : Infinity;
-  };
-  const classes = records.filter(record => record.active !== false)
-    .sort((a, b) => {
-      const first = classOrder(a);
-      const second = classOrder(b);
-      if (first !== second) return first < second ? -1 : 1;
-      return String(a.name).localeCompare(String(b.name), 'zh-CN') || a._id.localeCompare(b._id);
-    })
-    .map(classInfo);
+  const classes = sortClasses(records.filter(record => record.active !== false));
   return { registered: false, classes };
 }
 
-async function joinClass(openId, event) {
-  const classId = String(event.classId || '');
-  assert(/^[A-Za-z0-9_-]{1,64}$/.test(classId), '请选择有效班级');
-  const record = await findClass(classId);
-  assert(record && record.active !== false, '该班级不可选，请重新选择');
-  const selected = classInfo(record);
+async function joinClasses(openId, event) {
+  const classIds = event.classIds;
+  assert(Array.isArray(classIds) && classIds.length >= 1 && classIds.length <= MAX_CLASSES, '请至少选择一个班级');
+  assert(classIds.every(id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(id)) && new Set(classIds).size === classIds.length, '请选择有效班级');
+  const records = await Promise.all(classIds.map(findClass));
+  assert(records.every(record => record && record.active !== false), '所选班级不可选，请重新选择');
+  const classes = sortClasses(records);
   const existing = await findUser(openId);
   if (existing) {
-    assert(existing.classId === classId, '班级已绑定，不能自行修改，请联系管理员');
-    return { registered: true, ...selected };
+    assert(Array.isArray(existing.classId) && existing.classId.length === classIds.length && classIds.every(id => existing.classId.includes(id)), '班级已绑定，不能自行修改，请联系管理员');
+    return { registered: true, classes };
   }
   try {
     await db.collection('users').add({ data: {
-      _id: openId, classId, createTime: db.serverDate(), updateTime: db.serverDate()
+      _id: openId, classId: classIds, createTime: db.serverDate(), updateTime: db.serverDate()
     }});
   } catch (error) {
     const current = await findUser(openId);
     if (!current) throw error;
-    assert(current.classId === classId, '班级已绑定，不能自行修改，请联系管理员');
+    assert(Array.isArray(current.classId) && current.classId.length === classIds.length && classIds.every(id => current.classId.includes(id)), '班级已绑定，不能自行修改，请联系管理员');
   }
-  return { registered: true, ...selected };
+  return { registered: true, classes };
 }
 
 async function getSettings(classContext) {
@@ -169,6 +183,16 @@ async function listRecords(event, classContext) {
     if (result.data.length < 100) break;
   }
   return records.map(({ _id, date, subject, content, scores }) => ({ _id, date, subject, content: content || '', scores }));
+}
+
+async function deleteRecord(event, classContext) {
+  const recordId = event.recordId;
+  assert(typeof recordId === 'string' && recordId.length >= 1 && recordId.length <= 128, '成绩记录 ID 无效');
+  const result = await db.collection('scoreRecords')
+    .where({ _id: recordId, classId: classContext.classId })
+    .remove({ multi: false });
+  assert(Number(result.stats?.removed) === 1, '记录不存在或已删除，请重新查询');
+  return { id: recordId };
 }
 
 function requestVision(url, apiKey, body) {
@@ -313,14 +337,15 @@ exports.main = async event => {
     assert(openId, '无法确认微信用户身份，请从小程序重新进入');
     let data;
     if (event.action === 'getSession') data = await getSession(openId);
-    else if (event.action === 'joinClass') data = await joinClass(openId, event);
+    else if (event.action === 'joinClasses') data = await joinClasses(openId, event);
     else {
-      const classContext = await currentClass(openId);
+      const classContext = await currentClass(openId, event.classId);
       switch (event.action) {
-        case 'getSettings': data = await getSettings(classContext); break;
+        case 'getSettings': data = { ...await getSettings(classContext), userId: openId }; break;
         case 'saveSettings': data = await saveSettings(event, classContext); break;
         case 'saveRecord': data = await saveRecord(event, classContext, openId); break;
         case 'listRecords': data = { records: await listRecords(event, classContext) }; break;
+        case 'deleteRecord': data = await deleteRecord(event, classContext); break;
         case 'recognize': data = await recognize(event, classContext); break;
         case 'exportRecords': data = await exportRecords(event, classContext); break;
         default: throw new Error('不支持的操作');

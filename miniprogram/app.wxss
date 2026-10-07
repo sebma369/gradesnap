@@ -9,3 +9,4 @@ button::after { border: none; }
 .secondary-button { color: #3979d8; background: #edf4ff; border-radius: 18rpx; font-size: 28rpx; }
 .section-title { font-size: 34rpx; font-weight: 700; color: #243956; }
 .field-label { font-size: 25rpx; color: #8493a8; margin-bottom: 14rpx; }
+.current-class-bar { flex: none; margin: 16rpx 36rpx 0; padding: 14rpx 22rpx; border-radius: 14rpx; background: #eaf2fd; color: #3979d8; font-size: 26rpx; font-weight: 600; text-align: center; }

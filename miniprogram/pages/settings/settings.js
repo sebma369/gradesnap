@@ -1,25 +1,54 @@
-const { DEFAULT_CLASS_SIZE, MAX_CLASS_SIZE, callGrade, errorMessage } = require('../../utils/grade');
+const { DEFAULT_CLASS_SIZE, MAX_CLASS_SIZE, callGrade, errorMessage, getSelectedClassId, setSelectedClassId, resolveSelectedClass } = require('../../utils/grade');
 const MAX_SUBJECTS = 50;
 
 Page({
-  data: { classSize: String(DEFAULT_CLASS_SIZE), className: '', subjects: [], subjectDraft: '', saving: false, loading: false, settingsReady: false },
+  data: { classSize: String(DEFAULT_CLASS_SIZE), classId: '', className: '', classes: [], selectedClassIndex: -1, userId: '', subjects: [], subjectDraft: '', saving: false, loading: false, settingsReady: false },
   onShow() {
-    this.setData({ classSize: String(DEFAULT_CLASS_SIZE), className: '', subjects: [], subjectDraft: '', settingsReady: false });
-    this.load();
+    this.setData({ classSize: String(DEFAULT_CLASS_SIZE), classId: '', className: '', classes: [], selectedClassIndex: -1, userId: '', subjects: [], subjectDraft: '', settingsReady: false });
+    return this.load();
   },
   async load() {
     const requestId = this.settingsRequestId = (this.settingsRequestId || 0) + 1;
     this.setData({ loading: true, settingsReady: false });
     try {
+      const session = await callGrade('getSession');
+      if (requestId !== this.settingsRequestId) return;
+      if (!session.registered) return wx.reLaunch({ url: '/pages/entry/entry' });
+      const classes = session.classes || [];
+      const current = resolveSelectedClass(classes);
+      if (!current) throw new Error('没有可用班级，请联系管理员');
+      this.setData({ classes, selectedClassIndex: classes.findIndex(item => item.classId === current.classId), classId: current.classId, className: current.className });
       const data = await callGrade('getSettings');
       const subjects = Array.isArray(data.subjects) ? data.subjects : [];
-      if (requestId !== this.settingsRequestId) return;
-      this.setData({ classSize: String(data.classSize), className: data.className || '', subjects, loading: false, settingsReady: true });
+      if (requestId !== this.settingsRequestId || current.classId !== getSelectedClassId()) return;
+      this.setData({ classSize: String(data.classSize), className: data.className || '', userId: data.userId || '', subjects, loading: false, settingsReady: true });
     } catch (error) {
       if (requestId !== this.settingsRequestId) return;
-      this.setData({ loading: false, settingsReady: false });
+      this.setData({ userId: '', loading: false, settingsReady: false });
       if (error.code !== 'CLASS_REQUIRED') wx.showToast({ title: '云端设置读取失败，请重试', icon: 'none' });
     }
+  },
+  onClassChange(event) {
+    if (this.data.loading || this.data.saving) return;
+    const index = Number(event.detail.value);
+    if (!Number.isInteger(index) || index < 0 || index >= this.data.classes.length) return;
+    const selected = this.data.classes[index];
+    if (selected.classId === this.data.classId) return;
+    try { setSelectedClassId(selected.classId); }
+    catch (error) { return wx.showToast({ title: '班级切换失败，请重试', icon: 'none' }); }
+    this.setData({
+      classId: selected.classId, className: selected.className, selectedClassIndex: index,
+      classSize: String(DEFAULT_CLASS_SIZE), subjects: [], subjectDraft: '', settingsReady: false
+    });
+    return this.load();
+  },
+  copyUserId() {
+    if (!this.data.userId) return;
+    wx.setClipboardData({
+      data: this.data.userId,
+      success: () => wx.showToast({ title: '用户 ID 已复制', icon: 'success' }),
+      fail: () => wx.showToast({ title: '复制失败，请重试', icon: 'none' })
+    });
   },
   onSizeInput(event) {
     if (!this.data.settingsReady) return;
@@ -44,7 +73,7 @@ Page({
     this.setData({ subjects: this.data.subjects.filter((_, i) => i !== index) });
   },
   async save() {
-    if (this.data.saving || !this.data.settingsReady) return;
+    if (this.data.saving || !this.data.settingsReady || this.data.classId !== getSelectedClassId()) return;
     const size = Number(this.data.classSize);
     if (!Number.isInteger(size) || size < 1 || size > MAX_CLASS_SIZE) {
       return wx.showToast({ title: `请输入 1–${MAX_CLASS_SIZE} 的整数`, icon: 'none' });

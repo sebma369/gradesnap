@@ -23,6 +23,7 @@ function makePage(definition) {
 function mockIndexWx(resultPath) {
   const calls = { upload: [], navigation: [], media: [], modal: [] };
   global.wx = {
+    getStorageSync: () => 'class_a',
     chooseMedia: async options => {
       calls.media.push(options);
       return { tempFiles: [{ tempFilePath: '/tmp/photo.jpg' }] };

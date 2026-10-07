@@ -1,5 +1,22 @@
 const DEFAULT_CLASS_SIZE = 30;
 const MAX_CLASS_SIZE = 200;
+const SELECTED_CLASS_KEY = 'selectedClassId';
+
+function getSelectedClassId() {
+  try { return wx.getStorageSync(SELECTED_CLASS_KEY) || ''; }
+  catch (_) { return ''; }
+}
+
+function setSelectedClassId(classId) {
+  wx.setStorageSync(SELECTED_CLASS_KEY, classId);
+}
+
+function resolveSelectedClass(classes) {
+  const selected = getSelectedClassId();
+  const current = classes.find(item => item.classId === selected) || classes[0];
+  if (current && current.classId !== selected) setSelectedClassId(current.classId);
+  return current;
+}
 
 function today() {
   const date = new Date();
@@ -32,7 +49,9 @@ function errorMessage(error, fallback) {
 }
 
 async function callGrade(action, data) {
-  const response = await wx.cloud.callFunction({ name: 'gradeService', data: Object.assign({ action }, data || {}) });
+  const payload = Object.assign({ action }, data || {});
+  if (action !== 'getSession' && action !== 'joinClasses') payload.classId = getSelectedClassId();
+  const response = await wx.cloud.callFunction({ name: 'gradeService', data: payload });
   const result = response.result;
   if (!result || !result.ok) {
     const error = new Error(result && result.message || '云端服务暂不可用');
@@ -46,4 +65,4 @@ async function callGrade(action, data) {
   return result.data;
 }
 
-module.exports = { DEFAULT_CLASS_SIZE, MAX_CLASS_SIZE, today, studentNo, rowsForSize, errorMessage, callGrade };
+module.exports = { DEFAULT_CLASS_SIZE, MAX_CLASS_SIZE, today, studentNo, rowsForSize, errorMessage, callGrade, getSelectedClassId, setSelectedClassId, resolveSelectedClass };

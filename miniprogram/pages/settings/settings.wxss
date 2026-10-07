@@ -13,3 +13,10 @@
 .heading-line { display: flex; align-items: center; flex-wrap: wrap; gap: 16rpx; margin-top: 12rpx; }
 .heading-line .heading { margin-top: 0; }
 .class-name { color: #3979d8; background: #eaf2fd; padding: 8rpx 16rpx; border-radius: 14rpx; font-size: 25rpx; font-weight: 600; }
+.class-switch-card { margin-bottom: 24rpx; }
+.class-switch-value { position: relative; padding: 20rpx 52rpx; border-radius: 14rpx; background: #f5f8fc; color: #243956; font-size: 29rpx; text-align: center; }
+.class-switch-chevron { position: absolute; top: 25rpx; right: 26rpx; width: 15rpx; height: 15rpx; border-right: 3rpx solid #7293b7; border-bottom: 3rpx solid #7293b7; transform: rotate(45deg); }
+.user-card { margin-top: 24rpx; }
+.user-id-line { display: flex; align-items: center; gap: 16rpx; margin-top: 18rpx; }
+.user-id { flex: 1; min-width: 0; color: #344a68; font-size: 25rpx; line-height: 1.5; word-break: break-all; user-select: text; }
+.copy-button { flex: none; width: 20rpx; height: 72rpx; line-height: 72rpx; margin: 0; padding: 0; font-size: 26rpx; }

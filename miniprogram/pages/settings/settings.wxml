@@ -1,10 +1,18 @@
 <view class="page">
+  <view class="current-class-bar">当前班级：{{className || '读取中…'}}</view>
   <scroll-view class="settings-content" scroll-y enable-flex>
     <view class="eyebrow">班级配置</view>
-    <view class="heading-line"><view class="heading">班级与科目设置</view><text wx:if="{{className}}" class="class-name">当前班级：{{className}}</text></view>
+    <view class="heading-line"><view class="heading">班级与科目设置</view></view>
     <view class="intro">保存后，录入页会同步班级人数和可选科目。</view>
     <view wx:if="{{loading}}" class="sync-hint">正在读取云端设置…</view>
     <view wx:elif="{{!settingsReady}}" class="sync-hint">云端设置读取失败<button class="secondary-button retry-button" bindtap="load">重新读取</button></view>
+    <view class="card setting-card class-switch-card">
+      <view class="field-label">切换班级</view>
+      <picker mode="selector" range="{{classes}}" range-key="className" value="{{selectedClassIndex}}" bindchange="onClassChange" disabled="{{loading || saving || !classes.length}}">
+        <view class="class-switch-value">{{className || '请选择班级'}}<text class="class-switch-chevron"></text></view>
+      </picker>
+      <view class="hint">仅可切换到已绑定的班级，当前班级保存在本机；切换会放弃未保存的设置</view>
+    </view>
     <view class="card setting-card">
       <view class="field-label">班级人数</view>
       <view class="size-line"><input class="size-input" type="number" value="{{classSize}}" bindinput="onSizeInput" maxlength="3" disabled="{{saving || !settingsReady}}" /><text>人</text></view>
@@ -16,7 +24,15 @@
       <view wx:if="{{!subjects.length}}" class="hint">暂无科目，请添加后保存</view>
       <view wx:for="{{subjects}}" wx:key="*this" class="subject-row"><text class="subject-name">{{item}}</text><button class="remove-button" data-index="{{index}}" bindtap="onRemoveSubject" disabled="{{saving || !settingsReady}}">删除</button></view>
     </view>
+
     <view class="tip-card"><view class="tip-icon">i</view><view>点击“保存设置”后同步到云端。删除科目不会改变已保存的历史成绩。</view></view>
+    <view class="card setting-card user-card">
+      <view class="field-label">我的用户 ID</view>
+      <view class="user-id-line">
+        <text class="user-id">{{userId || (loading ? '正在读取…' : '暂无用户 ID')}}</text>
+        <button class="secondary-button copy-button" bindtap="copyUserId" disabled="{{!userId}}">复制</button>
+      </view>
+    </view>
   </scroll-view>
   <view class="bottom-area"><button class="primary-button" bindtap="save" loading="{{loading || saving}}" disabled="{{saving || !settingsReady}}">保存设置</button></view>
 </view>

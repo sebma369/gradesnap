@@ -1,4 +1,4 @@
-const { DEFAULT_CLASS_SIZE, today, rowsForSize, errorMessage, callGrade } = require('../../utils/grade');
+const { DEFAULT_CLASS_SIZE, today, rowsForSize, errorMessage, callGrade, getSelectedClassId } = require('../../utils/grade');
 
 function showReturnModal(content) {
   wx.showModal({ title: '请补全信息', content, showCancel: false, confirmText: '返回' });
@@ -18,28 +18,39 @@ function selectImageArea(path) {
 Page({
   data: {
     date: today(), subject: '', subjectIndex: -1, subjects: [], content: '', classSize: DEFAULT_CLASS_SIZE,
-    scores: rowsForSize(DEFAULT_CLASS_SIZE), imageFileID: '', imagePath: '', classId: '',
+    scores: rowsForSize(DEFAULT_CLASS_SIZE), imageFileID: '', imagePath: '', classId: '', className: '',
     busy: false, selectingImage: false, busyText: '', recognized: false, loadingSettings: false, settingsReady: false
   },
 
   onShow() {
-    if (!this.data.selectingImage) this.loadSettings();
+    const classId = getSelectedClassId();
+    if (this.data.selectingImage && this.data.classId === classId) return;
+    if (this.data.classId && this.data.classId !== classId) {
+      this.setData({
+        subject: '', subjectIndex: -1, content: '', classSize: DEFAULT_CLASS_SIZE,
+        scores: rowsForSize(DEFAULT_CLASS_SIZE), imageFileID: '', imagePath: '',
+        recognized: false, classId: '', className: '', subjects: [], settingsReady: false,
+        busy: false, selectingImage: false, busyText: ''
+      });
+    }
+    return this.loadSettings();
   },
 
   async loadSettings() {
     const requestId = this.settingsRequestId = (this.settingsRequestId || 0) + 1;
+    const requestedClassId = getSelectedClassId();
     this.setData({ loadingSettings: true, settingsReady: false });
     try {
       const settings = await callGrade('getSettings');
-      if (requestId !== this.settingsRequestId) return;
+      if (requestId !== this.settingsRequestId || requestedClassId !== getSelectedClassId()) return;
       const size = settings.classSize || DEFAULT_CLASS_SIZE;
       const subjects = Array.isArray(settings.subjects) ? settings.subjects : [];
       this.applyClassSize(size);
       this.applySubjects(subjects);
-      this.setData({ classId: settings.classId, loadingSettings: false, settingsReady: true });
+      this.setData({ classId: settings.classId, className: settings.className, loadingSettings: false, settingsReady: true });
     } catch (error) {
-      if (requestId !== this.settingsRequestId) return;
-      this.setData({ classId: '', subjects: [], subject: '', subjectIndex: -1, loadingSettings: false, settingsReady: false });
+      if (requestId !== this.settingsRequestId || requestedClassId !== getSelectedClassId()) return;
+      this.setData({ classId: '', className: '', subjects: [], subject: '', subjectIndex: -1, loadingSettings: false, settingsReady: false });
       if (error.code !== 'CLASS_REQUIRED') wx.showToast({ title: '云端设置读取失败，请重试', icon: 'none' });
     }
   },
@@ -55,7 +66,7 @@ Page({
   },
 
   chooseImage() {
-    if (this.data.busy || this.data.selectingImage || !this.data.settingsReady) return;
+    if (this.data.busy || this.data.selectingImage || !this.data.settingsReady || this.data.classId !== getSelectedClassId()) return;
     wx.showActionSheet({
       itemList: ['拍照', '从相册选择'],
       success: result => this.pickImage(result.tapIndex === 0 ? 'camera' : 'album')
@@ -63,22 +74,26 @@ Page({
   },
 
   async pickImage(sourceType) {
-    if (this.data.busy || this.data.selectingImage || !this.data.settingsReady) return;
+    if (this.data.busy || this.data.selectingImage || !this.data.settingsReady || this.data.classId !== getSelectedClassId()) return;
+    const classId = this.data.classId;
     this.setData({ selectingImage: true });
     let uploadStarted = false;
     try {
       const media = await wx.chooseMedia({ count: 1, mediaType: ['image'], sourceType: [sourceType], sizeType: ['original'] });
+      if (classId !== getSelectedClassId()) return;
       const path = await selectImageArea(media.tempFiles[0].tempFilePath);
-      if (!path) return;
+      if (!path || classId !== getSelectedClassId()) return;
       const extension = (path.match(/\.(jpe?g|png|webp)$/i) || [,'jpg'])[1].toLowerCase();
       uploadStarted = true;
       this.setData({
         busy: true, busyText: '正在上传成绩表…', subject: '', subjectIndex: -1, imageFileID: '', imagePath: path,
         scores: this.data.scores.map(row => ({ studentNo: row.studentNo, score: row.score, rawText: '' }))
       });
-      const upload = await wx.cloud.uploadFile({ cloudPath: `score-sheets/${this.data.classId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`, filePath: path });
+      const upload = await wx.cloud.uploadFile({ cloudPath: `score-sheets/${classId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`, filePath: path });
+      if (classId !== getSelectedClassId()) return;
       this.setData({ imageFileID: upload.fileID, imagePath: path, busyText: '正在识别成绩表…' });
       const result = await callGrade('recognize', { imageFileID: upload.fileID });
+      if (classId !== getSelectedClassId()) return;
       const recognized = (result.scores || []).map(row => ({
         studentNo: String(row.studentNo).padStart(2, '0'),
         rawText: typeof row.rawText === 'string' ? row.rawText : '',
@@ -100,6 +115,7 @@ Page({
         wx.showModal({ title: '未识别到成绩', content: '请查看原图并手动填写成绩后保存。', showCancel: false });
       }
     } catch (error) {
+      if (classId !== getSelectedClassId()) return;
       if (!String(error.errMsg || '').includes('cancel')) {
         if (!uploadStarted) {
           wx.showModal({ title: '图片处理失败', content: errorMessage(error), showCancel: false });
@@ -129,7 +145,7 @@ Page({
   },
 
   async save() {
-    if (this.data.busy || this.data.selectingImage || !this.data.settingsReady) return;
+    if (this.data.busy || this.data.selectingImage || !this.data.settingsReady || this.data.classId !== getSelectedClassId()) return;
     const date = String(this.data.date || '').trim();
     const subject = String(this.data.subject || '').trim();
     const content = String(this.data.content || '').trim();
@@ -147,12 +163,14 @@ Page({
     if (invalid) return showReturnModal(`学号 ${invalid.studentNo} 的成绩格式不正确，请填写数字。`);
     if (this.data.recognized) {
       const confirmed = await new Promise(resolve => wx.showModal({
-        title: '请核对成绩', content: '内容由AI识别生成，请仔细核对，为防止您后续查不到此条记录，请特别仔细核查时间。',
+        title: '请核对成绩', content: '内容由AI识别生成，请仔细核对，为防止您后续查不到此条记录，请特别仔细核查时间与当前选中班级。',
         showCancel: true, cancelText: '返回', confirmText: '确定',
         success: result => resolve(result.confirm), fail: () => resolve(false)
       }));
       if (!confirmed) return;
     }
+    if (this.data.classId !== getSelectedClassId()) return;
+    const classId = this.data.classId;
     this.setData({ busy: true, busyText: '正在保存成绩…' });
     try {
       await callGrade('saveRecord', {
@@ -160,9 +178,11 @@ Page({
         scores: this.data.scores.map(row => ({ studentNo: row.studentNo, score: row.score === '' ? null : Number(row.score) })),
         imageFileID: this.data.imageFileID
       });
+      if (classId !== getSelectedClassId()) return;
       this.setData({ subject: '', subjectIndex: -1, content: '', scores: rowsForSize(this.data.classSize), imageFileID: '', imagePath: '', recognized: false });
       wx.showModal({ title: '保存成功', content: '本次成绩已保存到云端，可在“导出”页查询。', showCancel: false });
     } catch (error) {
+      if (classId !== getSelectedClassId()) return;
       wx.showModal({ title: '保存失败', content: errorMessage(error), showCancel: false });
     } finally {
       this.setData({ busy: false, busyText: '' });

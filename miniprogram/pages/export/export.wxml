@@ -1,9 +1,10 @@
 <view class="page">
+  <view class="current-class-bar">当前班级：{{className || '读取中…'}}</view>
   <view class="query-area">
     <view class="eyebrow">成绩档案</view><view class="heading">查询与导出</view>
     <view class="filter-card card">
       <view class="date-row"><view class="date-field"><view class="field-label">起始日期</view><picker mode="date" value="{{startDate}}" disabled="{{loading}}" bindchange="onStartChange"><view class="date-value">{{startDate}}</view></picker></view><view class="date-separator">至</view><view class="date-field"><view class="field-label">截止日期</view><picker mode="date" value="{{endDate}}" disabled="{{loading}}" bindchange="onEndChange"><view class="date-value">{{endDate}}</view></picker></view></view>
-      <button class="secondary-button query-button" bindtap="query" loading="{{loading}}" disabled="{{loading}}">确定查询</button>
+      <button class="secondary-button query-button" bindtap="query" loading="{{loading}}" disabled="{{loading || deletingId || !classReady}}">确定查询</button>
     </view>
   </view>
   <scroll-view class="result-scroll" scroll-y enable-flex>
@@ -12,7 +13,7 @@
       <view wx:if="{{queried && !recordCount}}" class="empty card"><view class="empty-icon">▤</view><view class="empty-title">当前日期范围暂无成绩记录</view><view class="empty-caption">调整日期后重新查询，或先到录入页保存成绩</view></view>
       <view wx:if="{{!queried && !loading}}" class="empty card"><view class="empty-icon">⌕</view><view class="empty-title">选择日期，查询成绩</view><view class="empty-caption">查询结果会在这里清晰展示</view></view>
       <view wx:for="{{records}}" wx:key="_id" class="record-card card">
-        <view class="record-top"><view class="record-meta"><view class="record-date">{{item.date}}</view><view class="record-subject">{{item.subject}}</view><view wx:if="{{item.content}}" class="record-content">内容：{{item.content}}</view></view><text class="record-toggle" data-index="{{index}}" bindtap="toggleRecord">{{item.expanded ? '收起' : '展开'}}</text></view>
+        <view class="record-top"><view class="record-meta"><view class="record-date">{{item.date}}</view><view class="record-subject">{{item.subject}}</view><view wx:if="{{item.content}}" class="record-content">内容：{{item.content}}</view></view><view class="record-actions"><text class="record-action record-delete" data-id="{{item._id}}" bindtap="deleteRecord">删除</text><text class="record-action record-toggle" data-index="{{index}}" bindtap="toggleRecord">{{item.expanded ? '收起' : '展开'}}</text></view></view>
         <view class="score-panel" style="height: {{item.detailHeight}}px;">
           <view id="score-detail-{{index}}">
             <view class="table-header"><text>学号</text><text>成绩</text></view>
@@ -23,5 +24,5 @@
       <view class="result-space"></view>
     </view>
   </scroll-view>
-  <view class="bottom-area"><button class="primary-button" bindtap="exportFile" loading="{{exporting}}" disabled="{{!recordCount || loading || exporting}}">确认导出 Excel</button></view>
+  <view class="bottom-area"><button class="primary-button" bindtap="exportFile" loading="{{exporting}}" disabled="{{!classReady || !recordCount || loading || exporting || deletingId}}">确认导出 Excel</button></view>
 </view>

@@ -4,9 +4,9 @@
 .warning { margin: 26rpx 0; padding: 22rpx; border-radius: 16rpx; background: #eaf2fd; color: #4a6b94; line-height: 1.65; font-size: 26rpx; }
 .status { padding: 36rpx 0; color: #6c7e95; font-size: 27rpx; text-align: center; line-height: 1.6; }
 .retry-button { margin-top: 24rpx; border-radius: 14rpx; background: #eaf2fd; color: #3979d8; font-size: 27rpx; }
-.class-picker-label { margin: 8rpx 0 14rpx; color: #344a68; font-size: 27rpx; }
-.class-picker-value { position: relative; box-sizing: border-box; min-height: 88rpx; padding: 23rpx 60rpx; border: 1rpx solid #dce5f0; border-radius: 14rpx; background: #f8fbff; color: #243956; font-size: 29rpx; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.class-picker-placeholder { color: #8a9cb1; }
-.class-picker-chevron { position: absolute; top: 30rpx; right: 28rpx; width: 16rpx; height: 16rpx; border-right: 3rpx solid #7293b7; border-bottom: 3rpx solid #7293b7; transform: rotate(45deg); }
+.class-list { max-height: 48vh; }
+.class-option { display: flex; align-items: center; gap: 18rpx; min-height: 88rpx; padding: 12rpx 18rpx; border-bottom: 1rpx solid #edf1f5; color: #344a68; font-size: 29rpx; }
+.class-option:last-child { border-bottom: 0; }
+.class-label { flex: 1; text-align: center; padding-right: 42rpx; }
 .join-button { margin-top: 32rpx; border-radius: 16rpx; background: #3979d8; color: #fff; font-size: 30rpx; font-weight: 600; }
 .join-button[disabled] { background: #a5bfdf; color: #fff; }
