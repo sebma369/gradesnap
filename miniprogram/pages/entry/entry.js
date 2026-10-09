@@ -2,7 +2,7 @@ const { callGrade, errorMessage, resolveSelectedClass, setSelectedClassId } = re
 
 Page({
   data: {
-    loading: true, saving: false, classes: [], classListHeight: 0, selectedClassIds: [], loadError: ''
+    loading: true, saving: false, classManagementEnabled: false, classes: [], classListHeight: 0, selectedClassIds: [], loadError: ''
   },
 
   onLoad() { this.loadSession(); },
@@ -16,13 +16,17 @@ Page({
 
   async loadSession() {
     if (this.data.saving) return;
-    this.setData({ loading: true, loadError: '' });
+    this.setData({ loading: true, loadError: '', classManagementEnabled: false });
     try {
       const session = await callGrade('getSession');
+      const enabled = session.classManagementEnabled !== false;
+      this.setData({ classManagementEnabled: enabled });
       if (session.registered) {
-        resolveSelectedClass(session.classes);
+        if (enabled) resolveSelectedClass(session.classes);
+        else setSelectedClassId(session.defaultClassId);
         return this.goHome();
       }
+      if (!enabled) throw new Error('默认班级尚未配置，请联系管理员');
       const classes = session.classes || [];
       this.setData({ classes, classListHeight: Math.min(classes.length * 100, 500), selectedClassIds: [], loading: false });
     } catch (error) {

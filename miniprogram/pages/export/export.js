@@ -1,9 +1,9 @@
-const { today, callGrade, errorMessage, getSelectedClassId } = require('../../utils/grade');
+const { today, callGrade, errorMessage, getSelectedClassId, setSelectedClassId } = require('../../utils/grade');
 
 function monthStart() { return today().slice(0, 7) + '-01'; }
 
 Page({
-  data: { startDate: monthStart(), endDate: today(), classId: '', className: '', classReady: false, records: [], recordCount: 0, scoreCount: 0, queried: false, loading: false, exporting: false, deletingId: '', filePath: '', fileName: '' },
+  data: { startDate: monthStart(), endDate: today(), classId: '', className: '', classManagementEnabled: false, classReady: false, records: [], recordCount: 0, scoreCount: 0, queried: false, loading: false, exporting: false, deletingId: '', filePath: '', fileName: '' },
   onShow() {
     const classId = getSelectedClassId();
     if (this.data.classId !== classId) this.setData({
@@ -15,11 +15,18 @@ Page({
   async loadClass() {
     const requestId = this.classRequestId = (this.classRequestId || 0) + 1;
     const classId = getSelectedClassId();
-    this.setData({ classReady: false });
+    this.setData({ classReady: false, classManagementEnabled: false });
     try {
       const settings = await callGrade('getSettings');
-      if (requestId !== this.classRequestId || classId !== getSelectedClassId()) return;
-      this.setData({ classId: settings.classId, className: settings.className, classReady: true });
+      if (requestId !== this.classRequestId) return;
+      const enabled = settings.classManagementEnabled !== false;
+      if (!enabled) setSelectedClassId(settings.classId);
+      else if (classId !== getSelectedClassId()) return;
+      if (this.data.classId && this.data.classId !== settings.classId) this.setData({
+        records: [], recordCount: 0, scoreCount: 0, queried: false,
+        filePath: '', fileName: '', deletingId: ''
+      });
+      this.setData({ classId: settings.classId, className: settings.className, classManagementEnabled: enabled, classReady: true });
     } catch (error) {
       if (requestId !== this.classRequestId || classId !== getSelectedClassId()) return;
       this.setData({ className: '', classReady: false });

@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const Module = require('node:module');
 
-const tables = { classes: [], users: [], settings: [], scoreRecords: [] };
+const tables = { classes: [], users: [], settings: [], scoreRecords: [], scoreMappings: [] };
 let openId = 'teacher-a';
 let nextId = 1;
 const uploads = [];
@@ -43,7 +43,7 @@ function query(name, conditions = {}, options = {}) {
 }
 
 const db = {
-  command: { gte: lower => ({ and: upper => ({ $gte: lower, $lte: upper.value }) }), lte: value => ({ value }) },
+  command: { gte: lower => ({ and: upper => ({ $gte: lower, $lte: upper.value }) }), lte: value => ({ value }), addToSet: value => ({ $addToSet: value }), inc: value => ({ $inc: value }) },
   serverDate: () => new Date(),
   collection(name) {
     const base = query(name);
@@ -54,6 +54,16 @@ const db = {
         const row = { ...clone(data), _id: id };
         if (index < 0) tables[name].push(row);
         else tables[name][index] = row;
+      }, async update({ data }) {
+        const row = tables[name].find(item => item._id === id);
+        if (!row) throw new Error('document not found');
+        Object.entries(data).forEach(([key, value]) => {
+          if (value && typeof value === 'object' && '$addToSet' in value) {
+            if (!row[key].includes(value.$addToSet)) row[key].push(value.$addToSet);
+          } else if (value && typeof value === 'object' && '$inc' in value) {
+            row[key] += value.$inc;
+          } else row[key] = clone(value);
+        });
       } }; },
       async add({ data }) {
         const id = data._id || `record-${nextId++}`;
@@ -68,6 +78,7 @@ const db = {
 const cloud = {
   DYNAMIC_CURRENT_ENV: 'test', init() {}, database: () => db,
   getWXContext: () => ({ OPENID: openId }),
+  downloadFile: async () => ({ fileContent: Buffer.from([0xff, 0xd8, 0xff]) }),
   uploadFile: async options => { uploads.push(options); return { fileID: `cloud://test/${options.cloudPath}` }; }
 };
 const originalLoad = Module._load;
@@ -79,6 +90,7 @@ const service = require('../cloudfunctions/gradeService');
 Module._load = originalLoad;
 
 function reset() {
+  process.env.ENABLE_CLASS_MANAGEMENT = 'true';
   Object.keys(tables).forEach(name => { tables[name].length = 0; });
   tables.classes.push({ _id: 'class_a', name: '一班', order: 1 }, { _id: 'class_b', name: '二班', order: 2 }, { _id: 'closed', name: '停用班', active: false });
   uploads.length = 0;
@@ -238,4 +250,149 @@ test('unassigned users cannot read grades or save settings', async () => {
   assert.equal(records.code, 'CLASS_REQUIRED');
   const settings = await call('saveSettings', { classSize: 30, subjects: [] });
   assert.equal(settings.code, 'CLASS_REQUIRED');
+});
+
+test('hidden class management creates new users in 一班 and ignores another selected class', async () => {
+  reset();
+  process.env.ENABLE_CLASS_MANAGEMENT = 'false';
+  const session = await call('getSession');
+  assert.equal(session.data.registered, true);
+  assert.equal(session.data.classManagementEnabled, false);
+  assert.equal(session.data.defaultClassId, 'class_a');
+  assert.deepEqual(tables.users[0].classId, ['class_a']);
+  assert.equal((await call('joinClasses', { classIds: ['class_b'] })).ok, false);
+  const settings = await call('getSettings', { classId: 'class_b' });
+  assert.equal(settings.data.classId, 'class_a');
+  assert.equal(settings.data.classManagementEnabled, false);
+  const saved = await call('saveRecord', {
+    classId: 'class_b', date: '2026-10-09', subject: '数学', content: '练习',
+    scores: [{ studentNo: '01', score: 8 }]
+  });
+  assert.equal(saved.ok, true);
+  assert.equal(tables.scoreRecords[0].classId, 'class_a');
+});
+
+test('hidden class management adds existing users to 一班 without removing other classes', async () => {
+  reset();
+  process.env.ENABLE_CLASS_MANAGEMENT = 'false';
+  tables.users.push({ _id: 'teacher-a', classId: ['class_b'] });
+  tables.scoreRecords.push({ _id: 'old-b', classId: 'class_b', date: '2026-10-09', subject: '语文', scores: [] });
+  const session = await call('getSession');
+  assert.deepEqual(session.data.classes.map(item => item.classId), ['class_a']);
+  assert.deepEqual(tables.users[0].classId, ['class_b', 'class_a']);
+  const listed = await call('listRecords', { classId: 'class_b', startDate: '2026-10-01', endDate: '2026-10-31' });
+  assert.deepEqual(listed.data.records, []);
+  assert.equal((await call('deleteRecord', { classId: 'class_b', recordId: 'old-b' })).ok, false);
+  assert.equal(tables.scoreRecords[0].classId, 'class_b');
+});
+
+test('hidden class management reports a missing 一班 instead of assigning another class', async () => {
+  reset();
+  process.env.ENABLE_CLASS_MANAGEMENT = 'false';
+  tables.classes[0].name = '其他班';
+  const session = await call('getSession');
+  assert.equal(session.ok, false);
+  assert.match(session.message, /名称为“一班”/);
+  assert.equal(tables.users.length, 0);
+});
+
+test('saved recognized scores build class-scoped mappings and count repeated pairs', async () => {
+  reset();
+  await call('joinClasses', { classIds: ['class_a', 'class_b'] });
+  const first = await call('saveRecord', {
+    date: '2026-10-09', subject: '数学', content: '练习',
+    imageFileID: 'cloud://test/score-sheets/class_a/one.jpg',
+    scores: [
+      { studentNo: '01', rawText: 'A+', score: 2 },
+      { studentNo: '02', rawText: 'A+', score: 2 },
+      { studentNo: '03', rawText: 'A+', score: -1 },
+      { studentNo: '04', rawText: '空白', score: -2 },
+      { studentNo: '05', rawText: '√', score: 0 }
+    ]
+  });
+  assert.equal(first.ok, true);
+  assert.deepEqual(tables.scoreRecords[0].scores[0], { studentNo: '01', score: 2 });
+  assert.equal(tables.scoreMappings.find(row => row.rawText === 'A+' && row.score === 2).count, 2);
+  await call('saveRecord', {
+    date: '2026-10-09', subject: '数学', content: '练习',
+    imageFileID: 'cloud://test/score-sheets/class_a/two.jpg',
+    scores: [{ studentNo: '01', rawText: 'A+', score: -1 }, { studentNo: '02', rawText: 'A+', score: -1 }]
+  });
+  assert.equal(tables.scoreMappings.find(row => row.rawText === 'A+' && row.score === -1).count, 3);
+  const beforeManual = tables.scoreMappings.length;
+  await call('saveRecord', {
+    date: '2026-10-09', subject: '数学', content: '手动',
+    scores: [{ studentNo: '01', rawText: 'manual', score: 8 }]
+  });
+  assert.equal(tables.scoreMappings.length, beforeManual);
+  selectedByUser[openId] = 'class_b';
+  await call('saveRecord', {
+    date: '2026-10-09', subject: '数学', content: '练习',
+    imageFileID: 'cloud://test/score-sheets/class_b/one.jpg',
+    scores: [{ studentNo: '01', rawText: 'A+', score: 9 }]
+  });
+  assert.equal(tables.scoreMappings.find(row => row.classId === 'class_b' && row.rawText === 'A+').score, 9);
+});
+
+test('recognition uses the most frequent saved mapping and ignores model-provided scores', async () => {
+  reset();
+  await call('joinClasses', { classIds: ['class_a', 'class_b'] });
+  tables.scoreMappings.push(
+    { classId: 'class_a', rawText: 'A+', score: 2, count: 2 },
+    { classId: 'class_a', rawText: 'A+', score: -1, count: 3 },
+    { classId: 'class_a', rawText: '空白', score: -2, count: 1 },
+    { classId: 'class_a', rawText: '√', score: 0, count: 1 },
+    { classId: 'class_a', rawText: 'B', score: 1, count: 2 },
+    { classId: 'class_a', rawText: 'B', score: -2, count: 2 },
+    { classId: 'class_b', rawText: 'A+', score: 9, count: 10 }
+  );
+  process.env.AI_API_URL = 'https://example.com';
+  process.env.AI_API_KEY = 'test-key';
+  process.env.AI_MODEL = 'test-model';
+  const https = require('https');
+  const { EventEmitter } = require('node:events');
+  const originalRequest = https.request;
+  let prompt = '';
+  https.request = (_url, _options, respond) => {
+    const request = new EventEmitter();
+    request.end = payload => {
+      prompt = JSON.parse(payload).messages[0].content[0].text;
+      queueMicrotask(() => {
+        const response = new EventEmitter();
+        response.statusCode = 200;
+        respond(response);
+        const aiResult = {
+          date: '2026-10-09', subject: '数学', content: '练习', scores: [
+            { studentNo: '01', rawText: 'A+', score: 999 },
+            { studentNo: '02', rawText: '空白' },
+            { studentNo: '03', rawText: '√' },
+            { studentNo: '04', rawText: '新符号', score: 100 },
+            { studentNo: '05', rawText: null },
+            { studentNo: '06', rawText: 'B' }
+          ]
+        };
+        const apiResponse = { choices: [{ message: { content: JSON.stringify(aiResult) } }] };
+        response.emit('data', Buffer.from(JSON.stringify(apiResponse)));
+        response.emit('end');
+      });
+    };
+    return request;
+  };
+  try {
+    const recognized = await call('recognize', { imageFileID: 'cloud://test/score-sheets/class_a/one.jpg' });
+    assert.equal(recognized.ok, true);
+    assert.deepEqual(recognized.data.scores.map(row => row.score), [-1, -2, 0, null, null, -2]);
+    assert.deepEqual(recognized.data.scores.map(row => row.rawText), ['A+', '空白', '√', '新符号', '', 'B']);
+    assert.match(prompt, /不要进行分数换算/);
+    assert.doesNotMatch(prompt, /A\+ 对应 2 分/);
+    selectedByUser[openId] = 'class_b';
+    const other = await call('recognize', { imageFileID: 'cloud://test/score-sheets/class_b/one.jpg' });
+    assert.equal(other.data.scores[0].score, 9);
+    assert.equal(other.data.scores[1].score, null);
+  } finally {
+    https.request = originalRequest;
+    delete process.env.AI_API_URL;
+    delete process.env.AI_API_KEY;
+    delete process.env.AI_MODEL;
+  }
 });

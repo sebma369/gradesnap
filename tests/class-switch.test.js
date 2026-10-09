@@ -102,3 +102,41 @@ test('a confirmed delete removes only the chosen preview card', async () => {
   assert.equal(exports.data.scoreCount, 1);
   assert.equal(exports.data.filePath, '');
 });
+
+test('hidden class management restores 一班 from stale local selection on each page', async () => {
+  const storage = { selectedClassId: 'class_b' };
+  global.wx = {
+    getStorageSync: key => storage[key],
+    setStorageSync: (key, value) => { storage[key] = value; },
+    cloud: { callFunction: async ({ data }) => ({ result: { ok: true, data:
+      data.action === 'getSession'
+        ? { registered: true, classManagementEnabled: false, defaultClassId: 'class_a', classes: [{ classId: 'class_a', className: '一班' }] }
+        : { classId: 'class_a', className: '一班', classManagementEnabled: false, classSize: 2, subjects: ['数学'], userId: 'teacher-a' }
+    } }) },
+    showToast() {}
+  };
+  const settings = page(settingsPage);
+  await settings.onShow();
+  assert.equal(storage.selectedClassId, 'class_a');
+  assert.equal(settings.data.classManagementEnabled, false);
+  assert.equal(settings.data.classId, 'class_a');
+  storage.selectedClassId = 'class_b';
+
+  const entry = page(indexPage);
+  Object.assign(entry.data, { classId: 'class_b', className: '二班', content: '旧班内容', imageFileID: 'cloud://old' });
+  await entry.onShow();
+  assert.equal(storage.selectedClassId, 'class_a');
+  assert.equal(entry.data.classId, 'class_a');
+  assert.equal(entry.data.content, '');
+  assert.equal(entry.data.imageFileID, '');
+  assert.equal(entry.data.classManagementEnabled, false);
+  storage.selectedClassId = 'class_b';
+
+  const exports = page(exportPage);
+  Object.assign(exports.data, { classId: 'class_b', records: [{ _id: 'old' }], recordCount: 1, queried: true });
+  await exports.onShow();
+  assert.equal(storage.selectedClassId, 'class_a');
+  assert.equal(exports.data.classId, 'class_a');
+  assert.deepEqual(exports.data.records, []);
+  assert.equal(exports.data.classManagementEnabled, false);
+});

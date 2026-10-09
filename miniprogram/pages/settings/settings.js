@@ -2,9 +2,9 @@ const { DEFAULT_CLASS_SIZE, MAX_CLASS_SIZE, callGrade, errorMessage, getSelected
 const MAX_SUBJECTS = 50;
 
 Page({
-  data: { classSize: String(DEFAULT_CLASS_SIZE), classId: '', className: '', classes: [], selectedClassIndex: -1, userId: '', subjects: [], subjectDraft: '', saving: false, loading: false, settingsReady: false },
+  data: { classSize: String(DEFAULT_CLASS_SIZE), classId: '', className: '', classManagementEnabled: false, classes: [], selectedClassIndex: -1, userId: '', subjects: [], subjectDraft: '', saving: false, loading: false, settingsReady: false },
   onShow() {
-    this.setData({ classSize: String(DEFAULT_CLASS_SIZE), classId: '', className: '', classes: [], selectedClassIndex: -1, userId: '', subjects: [], subjectDraft: '', settingsReady: false });
+    this.setData({ classSize: String(DEFAULT_CLASS_SIZE), classId: '', className: '', classManagementEnabled: false, classes: [], selectedClassIndex: -1, userId: '', subjects: [], subjectDraft: '', settingsReady: false });
     return this.load();
   },
   async load() {
@@ -15,9 +15,11 @@ Page({
       if (requestId !== this.settingsRequestId) return;
       if (!session.registered) return wx.reLaunch({ url: '/pages/entry/entry' });
       const classes = session.classes || [];
-      const current = resolveSelectedClass(classes);
+      const enabled = session.classManagementEnabled !== false;
+      const current = enabled ? resolveSelectedClass(classes) : classes.find(item => item.classId === session.defaultClassId);
       if (!current) throw new Error('没有可用班级，请联系管理员');
-      this.setData({ classes, selectedClassIndex: classes.findIndex(item => item.classId === current.classId), classId: current.classId, className: current.className });
+      if (!enabled) setSelectedClassId(current.classId);
+      this.setData({ classManagementEnabled: enabled, classes, selectedClassIndex: classes.findIndex(item => item.classId === current.classId), classId: current.classId, className: current.className });
       const data = await callGrade('getSettings');
       const subjects = Array.isArray(data.subjects) ? data.subjects : [];
       if (requestId !== this.settingsRequestId || current.classId !== getSelectedClassId()) return;
@@ -29,7 +31,7 @@ Page({
     }
   },
   onClassChange(event) {
-    if (this.data.loading || this.data.saving) return;
+    if (!this.data.classManagementEnabled || this.data.loading || this.data.saving) return;
     const index = Number(event.detail.value);
     if (!Number.isInteger(index) || index < 0 || index >= this.data.classes.length) return;
     const selected = this.data.classes[index];

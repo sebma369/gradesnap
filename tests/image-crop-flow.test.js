@@ -20,8 +20,8 @@ function makePage(definition) {
   };
 }
 
-function mockIndexWx(resultPath) {
-  const calls = { upload: [], navigation: [], media: [], modal: [] };
+function mockIndexWx(resultPath, recognizedScores) {
+  const calls = { upload: [], navigation: [], media: [], modal: [], toast: [] };
   global.wx = {
     getStorageSync: () => 'class_a',
     chooseMedia: async options => {
@@ -40,11 +40,11 @@ function mockIndexWx(resultPath) {
       },
       callFunction: async () => ({ result: { ok: true, data: {
         date: '2026-10-07', subject: '数学', content: '作业',
-        scores: [{ studentNo: '01', score: 95, rawText: '95' }]
+        scores: recognizedScores || [{ studentNo: '01', score: 95, rawText: '95' }]
       } } })
     },
     showModal: options => calls.modal.push(options),
-    showToast() {}
+    showToast: options => calls.toast.push(options)
   };
   return calls;
 }
@@ -71,6 +71,33 @@ test('album selection can keep the original image', async () => {
   assert.equal(calls.upload[0].filePath, '/tmp/photo.jpg');
 });
 
+test('recognition below 90 percent warns about writing quality using unique student results', async () => {
+  const recognizedScores = Array.from({ length: 9 }, (_, index) => ({
+    studentNo: String(index < 8 ? index + 1 : 8).padStart(2, '0'),
+    rawText: index === 7 ? '空白' : 'A+', score: 2
+  }));
+  const calls = mockIndexWx('/tmp/photo.jpg', recognizedScores);
+  const page = makePage(indexDefinition);
+  page.data.classSize = 10;
+  await page.pickImage('album');
+  assert.match(calls.modal[0].content, /8\/10.*80\.0%.*低于 90%/);
+  assert.match(calls.modal[0].content, /请规范书写/);
+  assert.equal(page.data.scores[7].rawText, 'A+');
+});
+
+test('exactly 90 percent recognized including an explicit blank does not warn', async () => {
+  const recognizedScores = Array.from({ length: 9 }, (_, index) => ({
+    studentNo: String(index + 1).padStart(2, '0'),
+    rawText: index === 8 ? '空白' : 'A+', score: 2
+  }));
+  const calls = mockIndexWx('/tmp/photo.jpg', recognizedScores);
+  const page = makePage(indexDefinition);
+  page.data.classSize = 10;
+  await page.pickImage('album');
+  assert.equal(calls.modal.length, 0);
+  assert.equal(calls.toast[0].title, '识别完成，请核对');
+});
+
 test('canceling the crop preserves the previous image and form', async () => {
   const calls = mockIndexWx('');
   const page = makePage(indexDefinition);
@@ -81,6 +108,29 @@ test('canceling the crop preserves the previous image and form', async () => {
   assert.equal(page.data.imagePath, '/tmp/previous.jpg');
   assert.equal(page.data.subject, '数学');
   assert.equal(page.data.selectingImage, false);
+});
+
+test('saving recognized grades sends raw text for learning but keeps edited numeric scores', async () => {
+  const calls = [];
+  const modals = [];
+  global.wx = {
+    getStorageSync: () => 'class_a',
+    cloud: { callFunction: async options => {
+      calls.push(options.data);
+      return { result: { ok: true, data: { id: 'saved' } } };
+    } },
+    showModal: options => { modals.push(options); if (options.success) options.success({ confirm: true }); }
+  };
+  const page = makePage(indexDefinition);
+  Object.assign(page.data, {
+    date: '2026-10-09', subject: '数学', subjectIndex: 0, content: '练习', classSize: 1,
+    scores: [{ studentNo: '01', rawText: 'A+', score: '-1' }],
+    imageFileID: 'cloud://test/score-sheets/class_a/one.jpg', recognized: true
+  });
+  await page.save();
+  assert.match(modals[0].content, /当前选择的日期：2026-10-09/);
+  assert.deepEqual(calls[0].scores, [{ studentNo: '01', rawText: 'A+', score: -1 }]);
+  assert.equal(calls[0].imageFileID, 'cloud://test/score-sheets/class_a/one.jpg');
 });
 
 test('crop handles change width and height independently within the image', () => {

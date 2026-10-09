@@ -11,6 +11,9 @@ const MAX_CLASSES = 500;
 const MAX_SUBJECTS = 50;
 const MAX_RECORDS = 300;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const DEFAULT_CLASS_NAME = '一班';
+
+function classManagementEnabled() { return process.env.ENABLE_CLASS_MANAGEMENT === 'true'; }
 
 function assert(condition, message) { if (!condition) throw new Error(message); }
 function validDate(value) {
@@ -36,6 +39,41 @@ async function findUser(openId) {
   return result.data[0];
 }
 
+async function findDefaultClass() {
+  const result = await db.collection('classes').where({ name: DEFAULT_CLASS_NAME }).limit(2).get();
+  assert(result.data.length === 1, `请在 classes 集合中保留唯一一个名称为“${DEFAULT_CLASS_NAME}”的班级`);
+  const record = result.data[0];
+  assert(record.active !== false, `“${DEFAULT_CLASS_NAME}”已停用，请联系管理员`);
+  classInfo(record);
+  return record;
+}
+
+async function ensureDefaultUser(openId, classId) {
+  let user = await findUser(openId);
+  if (!user) {
+    try {
+      await db.collection('users').add({ data: {
+        _id: openId, classId: [classId], createTime: db.serverDate(), updateTime: db.serverDate()
+      }});
+      return;
+    } catch (error) {
+      user = await findUser(openId);
+      if (!user) throw error;
+    }
+  }
+  if (Array.isArray(user.classId)) {
+    if (user.classId.includes(classId)) return;
+    await db.collection('users').doc(openId).update({ data: {
+      classId: _.addToSet(classId), updateTime: db.serverDate()
+    }});
+  } else {
+    const previous = typeof user.classId === 'string' && user.classId ? [user.classId] : [];
+    await db.collection('users').doc(openId).update({ data: {
+      classId: [...new Set([...previous, classId])], updateTime: db.serverDate()
+    }});
+  }
+}
+
 function classRequired(message) {
   const error = new Error(message);
   error.code = 'CLASS_REQUIRED';
@@ -43,6 +81,11 @@ function classRequired(message) {
 }
 
 async function currentClass(openId, selectedClassId) {
+  if (!classManagementEnabled()) {
+    const record = await findDefaultClass();
+    await ensureDefaultUser(openId, record._id);
+    return classInfo(record);
+  }
   const user = await findUser(openId);
   if (!user) classRequired('请先选择所属班级');
   if (!Array.isArray(user.classId) || !user.classId.length) classRequired('用户班级配置无效，请联系管理员');
@@ -69,12 +112,17 @@ function sortClasses(records) {
 }
 
 async function getSession(openId) {
+  if (!classManagementEnabled()) {
+    const record = await findDefaultClass();
+    await ensureDefaultUser(openId, record._id);
+    return { registered: true, classes: [classInfo(record)], defaultClassId: record._id, classManagementEnabled: false };
+  }
   const user = await findUser(openId);
   if (user) {
     assert(Array.isArray(user.classId) && user.classId.length && user.classId.length <= MAX_CLASSES && new Set(user.classId).size === user.classId.length, '用户班级配置无效，请联系管理员');
     const records = await Promise.all(user.classId.map(findClass));
     assert(records.every(Boolean), '所属班级不存在，请联系管理员');
-    return { registered: true, classes: sortClasses(records) };
+    return { registered: true, classes: sortClasses(records), classManagementEnabled: true };
   }
   const records = [];
   for (let offset = 0; offset <= MAX_CLASSES; offset += 100) {
@@ -84,10 +132,11 @@ async function getSession(openId) {
     if (result.data.length < 100) break;
   }
   const classes = sortClasses(records.filter(record => record.active !== false));
-  return { registered: false, classes };
+  return { registered: false, classes, classManagementEnabled: true };
 }
 
 async function joinClasses(openId, event) {
+  assert(classManagementEnabled(), '班级选择功能暂未开放');
   const classIds = event.classIds;
   assert(Array.isArray(classIds) && classIds.length >= 1 && classIds.length <= MAX_CLASSES, '请至少选择一个班级');
   assert(classIds.every(id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(id)) && new Set(classIds).size === classIds.length, '请选择有效班级');
@@ -152,6 +201,67 @@ function validateScores(scores) {
   return clean;
 }
 
+function mappingRawText(value) {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  return text.length <= 100 ? text : '';
+}
+
+function mappingId(classId, rawText, score) {
+  return crypto.createHash('sha256').update(JSON.stringify([classId, rawText, score])).digest('hex');
+}
+
+async function learnScoreMappings(classId, submittedRows, scores) {
+  const occurrences = new Map();
+  submittedRows.forEach((row, index) => {
+    const rawText = mappingRawText(row.rawText);
+    const score = scores[index].score;
+    if (!rawText || score === null) return;
+    const id = mappingId(classId, rawText, score);
+    const entry = occurrences.get(id) || { classId, rawText, score, count: 0 };
+    entry.count++;
+    occurrences.set(id, entry);
+  });
+  for (const [id, entry] of occurrences) {
+    const collection = db.collection('scoreMappings');
+    try {
+      await collection.add({ data: {
+        _id: id, ...entry, createTime: db.serverDate(), updateTime: db.serverDate()
+      }});
+    } catch (error) {
+      // 同时保存相同对应关系时，只有首次创建会成功；其余请求原子累加。
+      await collection.doc(id).update({ data: {
+        count: _.inc(entry.count), updateTime: db.serverDate()
+      }});
+    }
+  }
+}
+
+async function scoreForRawText(classId, rawText) {
+  let best = null;
+  for (let offset = 0; ; offset += 100) {
+    const result = await db.collection('scoreMappings')
+      .where({ classId, rawText }).orderBy('_id', 'asc').skip(offset).limit(100).get();
+    for (const row of result.data) {
+      if (!Number.isFinite(row.score) || !Number.isInteger(row.count) || row.count < 1) continue;
+      if (!best || row.count > best.count || (row.count === best.count && row.score < best.score)) best = row;
+    }
+    if (result.data.length < 100) break;
+  }
+  return best ? best.score : null;
+}
+
+async function mapRecognizedScores(classId, rows) {
+  const rawTexts = [...new Set(rows.map(row => mappingRawText(row.rawText)).filter(Boolean))];
+  const mapped = new Map();
+  for (let offset = 0; offset < rawTexts.length; offset += 20) {
+    const batch = rawTexts.slice(offset, offset + 20);
+    const values = await Promise.all(batch.map(rawText => scoreForRawText(classId, rawText)));
+    batch.forEach((rawText, index) => mapped.set(rawText, values[index]));
+  }
+  return rows.map(row => ({ ...row, score: mapped.get(mappingRawText(row.rawText)) ?? null }));
+}
+
 async function saveRecord(event, classContext, openId) {
   assert(validDate(event.date), '日期格式不正确');
   const subject = String(event.subject || '').trim();
@@ -166,6 +276,12 @@ async function saveRecord(event, classContext, openId) {
     date: event.date, subject, content, scores, imageFileID,
     createTime: db.serverDate(), updateTime: db.serverDate()
   }});
+  try {
+    if (imageFileID) await learnScoreMappings(classContext.classId, event.scores, scores);
+  } catch (error) {
+    console.error('成绩已保存，但识别映射统计更新失败', error);
+    return { id: result._id, mappingWarning: '成绩已保存，但识别结果映射未能更新' };
+  }
   return { id: result._id };
 }
 
@@ -275,10 +391,8 @@ async function recognize(event, classContext) {
     subjectRule,
     '内容取图片中明确写出的课题、练习或考试内容；若没有明确内容或识别确信度不高则填空字符串，不要用科目或日期代替，也不要猜测，不要使用图片中没有出现过的字词。',
     '学号逐个读取，不要猜测或补充不存在的学号。学号保留前导零。图片中已出现的学号即使成绩格为空，也要返回对应的 scores 条目。',
-    '成绩有两种记分规则，第一种为字母等级，需要进行等级到数值的转换，A+ 对应 2 分，A 对应 0 分，A- 对应 0 分，B+ 对应 0 分，B 对应 -2 分，B- 对应 -2 分，所有C等级对应 -3 分，所有D等级对应 -4 分，空白对应 -2 分。老师手写成绩有时会在字母旁打一个点，请忽略此点号，不要将它识别为减号，如果无法确定识别，则将此成绩填为null。',
-    '第二种记分方式中有以下规则：对勾符号对应0分，正值数字对应相应数值分（如 +4 对应 4 分），空白对应 -2 分。如果无法确定识别，则将此成绩填为null。',
-    '每个学号的成绩先识别原始文本 rawText，再按上述规则转换为 score。rawText 必须原样保留图片中写出的内容，例如 A+、+4、√；确认为空白时填“空白”。有笔迹但无法辨认时 rawText和score都填 null，不要把无法辨认当作空白。',
-    '只返回 JSON 对象，字段名严格为 date、subject、content、scores；scores 中每项的字段名严格为 studentNo、rawText、score。date 为 YYYY-MM-DD 或空字符串；subject、content、rawText 为字符串；score 为数字或 null。示例：{"date":"2026-10-07","subject":"数学","content":"单元练习","scores":[{"studentNo":"01","rawText":"A+","score":2},{"studentNo":"02","rawText":"空白","score":-2}]}。'
+    '每个学号只识别成绩格中的原始文本 rawText，不要进行分数换算，也不要返回数字成绩字段。rawText 尽量原样保留，例如 A+、+4、√；确认为空白时填“空白”。有笔迹但无法辨认时填 null，不要把无法辨认当作空白。老师手写成绩有时会在字母旁打一个点，请保留看到的原始文本，不要猜测它代表的分数。',
+    '只返回 JSON 对象，字段名严格为 date、subject、content、scores；scores 中每项的字段名严格为 studentNo、rawText。date 为 YYYY-MM-DD 或空字符串；subject、content 为字符串；rawText 为字符串或 null。示例：{"date":"2026-10-07","subject":"数学","content":"单元练习","scores":[{"studentNo":"01","rawText":"A+"},{"studentNo":"02","rawText":"空白"}]}。'
   ].join('\n');
   const imageUrl = `data:${mime};base64,${image.toString('base64')}`;
   const response = await requestVision(endpoint, apiKey, {
@@ -294,11 +408,11 @@ async function recognize(event, classContext) {
   let parsed;
   try { parsed = JSON.parse(content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()); }
   catch (_) { throw new Error('AI 返回的数据格式不正确，请重试或手动填写'); }
-  const scores = Array.isArray(parsed.scores) ? parsed.scores.filter(row => row && /^\d{1,3}$/.test(String(row.studentNo))).map(row => ({
+  const recognizedRows = Array.isArray(parsed.scores) ? parsed.scores.filter(row => row && /^\d{1,3}$/.test(String(row.studentNo))).map(row => ({
     studentNo: String(row.studentNo).padStart(2, '0'),
-    rawText: typeof row.rawText === 'string' ? row.rawText : '',
-    score: row.score == null || row.score === '' || !Number.isFinite(Number(row.score)) ? null : Number(row.score)
+    rawText: typeof row.rawText === 'string' ? row.rawText : ''
   })) : [];
+  const scores = await mapRecognizedScores(classContext.classId, recognizedRows);
   return {
     date: validDate(parsed.date) ? parsed.date : '',
     subject: typeof parsed.subject === 'string' ? parsed.subject.trim().slice(0, 30) : '',
@@ -341,7 +455,7 @@ exports.main = async event => {
     else {
       const classContext = await currentClass(openId, event.classId);
       switch (event.action) {
-        case 'getSettings': data = { ...await getSettings(classContext), userId: openId }; break;
+        case 'getSettings': data = { ...await getSettings(classContext), userId: openId, classManagementEnabled: classManagementEnabled() }; break;
         case 'saveSettings': data = await saveSettings(event, classContext); break;
         case 'saveRecord': data = await saveRecord(event, classContext, openId); break;
         case 'listRecords': data = { records: await listRecords(event, classContext) }; break;

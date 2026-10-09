@@ -1,12 +1,12 @@
 <view class="page">
-  <view class="current-class-bar">当前班级：{{className || '读取中…'}}</view>
+  <view wx:if="{{classManagementEnabled}}" class="current-class-bar">当前班级：{{className || '读取中…'}}</view>
   <scroll-view class="settings-content" scroll-y enable-flex>
     <view class="eyebrow">班级配置</view>
     <view class="heading-line"><view class="heading">班级与科目设置</view></view>
     <view class="intro">保存后，录入页会同步班级人数和可选科目。</view>
     <view wx:if="{{loading}}" class="sync-hint">正在读取云端设置…</view>
     <view wx:elif="{{!settingsReady}}" class="sync-hint">云端设置读取失败<button class="secondary-button retry-button" bindtap="load">重新读取</button></view>
-    <view class="card setting-card class-switch-card">
+    <view wx:if="{{classManagementEnabled}}" class="card setting-card class-switch-card">
       <view class="field-label">切换班级</view>
       <picker mode="selector" range="{{classes}}" range-key="className" value="{{selectedClassIndex}}" bindchange="onClassChange" disabled="{{loading || saving || !classes.length}}">
         <view class="class-switch-value">{{className || '请选择班级'}}<text class="class-switch-chevron"></text></view>

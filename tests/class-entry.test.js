@@ -57,3 +57,26 @@ test('returning user keeps an authorized local class or falls back to the first'
   assert.equal(storage.selectedClassId, 'class_b');
   assert.deepEqual(calls.map(item => item.url), ['/pages/index/index', '/pages/index/index']);
 });
+
+test('hidden class management enters 一班 without showing class selection', async () => {
+  const calls = [];
+  const storage = { selectedClassId: 'class_b' };
+  global.wx = {
+    cloud: { callFunction: async options => {
+      calls.push(options.data);
+      return { result: { ok: true, data: {
+        registered: true, classManagementEnabled: false, defaultClassId: 'class_a',
+        classes: [{ classId: 'class_a', className: '一班' }]
+      } } };
+    } },
+    getStorageSync: key => storage[key],
+    setStorageSync: (key, value) => { storage[key] = value; },
+    switchTab: options => calls.push(options)
+  };
+  const instance = page();
+  await instance.loadSession();
+  assert.equal(storage.selectedClassId, 'class_a');
+  assert.equal(instance.data.classManagementEnabled, false);
+  assert.equal(calls[1].url, '/pages/index/index');
+  assert.deepEqual(instance.data.selectedClassIds, []);
+});
